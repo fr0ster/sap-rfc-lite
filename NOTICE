@@ -1,0 +1,5 @@
+This project is based on node-rfc (https://github.com/SAP/node-rfc)
+Copyright 2014 SAP SE, Srdjan Boskovic <srdjan.boskovic@sap.com>
+Licensed under the Apache License, Version 2.0
+
+Modifications: Removed Pool, Server, Throughput classes. Simplified Client API to Promise-only.
