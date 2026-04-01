@@ -1,15 +1,17 @@
 // SPDX-FileCopyrightText: 2026 sap-rfc-lite contributors
 // SPDX-License-Identifier: Apache-2.0
 
-import { binding, RfcClientBinding } from './binding';
-import { RfcConnectionParameters, RfcObject } from './types';
+import { binding, type RfcClientBinding } from './binding';
+import type { RfcConnectionParameters, RfcObject } from './types';
 
 export class Client {
   private __client: RfcClientBinding;
 
   constructor(connectionParameters: RfcConnectionParameters) {
     if (!connectionParameters || typeof connectionParameters !== 'object') {
-      throw new TypeError('Client constructor requires connection parameters object');
+      throw new TypeError(
+        'Client constructor requires connection parameters object',
+      );
     }
     this.__client = new binding.Client(connectionParameters);
   }
@@ -57,7 +59,9 @@ export class Client {
   call(rfmName: string, rfmParams: RfcObject = {}): Promise<RfcObject> {
     return new Promise((resolve, reject) => {
       if (typeof rfmName !== 'string' || rfmName.length === 0) {
-        reject(new TypeError('Function module name must be a non-empty string'));
+        reject(
+          new TypeError('Function module name must be a non-empty string'),
+        );
         return;
       }
       try {
@@ -70,7 +74,7 @@ export class Client {
             } else {
               resolve(res);
             }
-          }
+          },
         );
       } catch (ex) {
         reject(ex);

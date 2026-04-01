@@ -1,20 +1,25 @@
 // SPDX-FileCopyrightText: 2026 sap-rfc-lite contributors
 // SPDX-License-Identifier: Apache-2.0
 
-import path from 'path';
-import { RfcConnectionParameters, RfcObject, RfcSdkVersions } from './types';
+import path from 'node:path';
+import type {
+  RfcConnectionParameters,
+  RfcObject,
+  RfcSdkVersions,
+} from './types';
 
 export interface RfcClientBinding {
+  // biome-ignore lint/suspicious/noMisleadingInstantiator: mirrors native C++ addon constructor
   new (connectionParameters: RfcConnectionParameters): RfcClientBinding;
   _id: number;
   _alive: boolean;
-  open(callback: Function): void;
-  close(callback: Function): void;
+  open(callback: (err?: unknown) => void): void;
+  close(callback: (err?: unknown) => void): void;
   invoke(
     rfmName: string,
     rfmParams: RfcObject,
-    callback: Function,
-    callOptions?: object
+    callback: (err: unknown, res: RfcObject) => void,
+    callOptions?: object,
   ): void;
 }
 
@@ -28,7 +33,7 @@ let binding: NativeBinding;
 try {
   // eslint-disable-next-line @typescript-eslint/no-var-requires
   binding = require('node-gyp-build')(
-    path.resolve(__dirname, '..')
+    path.resolve(__dirname, '..'),
   ) as NativeBinding;
 } catch (ex) {
   const err = ex as Error;

@@ -6,7 +6,9 @@ export type RfcConnectionParameters = Record<string, string>;
 
 // RFC data types
 export type RfcVariable = string | number | Buffer;
-export type RfcStructure = { [key: string]: RfcVariable | RfcStructure | RfcTable };
+export type RfcStructure = {
+  [key: string]: RfcVariable | RfcStructure | RfcTable;
+};
 export type RfcTable = Array<RfcVariable | RfcStructure>;
 export type RfcParameterValue = RfcVariable | RfcStructure | RfcTable;
 export type RfcObject = { [key: string]: RfcParameterValue };
