@@ -3,3 +3,4 @@ lib/
 build/
 prebuilds/
 *.node
+*.log
