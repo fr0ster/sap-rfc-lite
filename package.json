@@ -5,7 +5,11 @@
   "license": "Apache-2.0",
   "main": "./lib/index.js",
   "types": "./lib/index.d.ts",
-  "files": ["binding.gyp", "src", "lib"],
+  "files": [
+    "binding.gyp",
+    "src",
+    "lib"
+  ],
   "scripts": {
     "install": "node-gyp-build",
     "build:ts": "tsc",
@@ -21,11 +25,12 @@
     "node-gyp-build": "^4.6.0"
   },
   "devDependencies": {
+    "@types/jest": "^29.0.0",
     "@types/node": "^20.0.0",
-    "typescript": "^5.0.0",
     "jest": "^29.0.0",
     "ts-jest": "^29.0.0",
-    "@types/jest": "^29.0.0"
+    "ts-node": "^10.9.2",
+    "typescript": "^5.0.0"
   },
   "engines": {
     "node": ">=18"
