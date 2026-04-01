@@ -1,5 +1,5 @@
 {
-  "name": "sap-rfc-lite",
+  "name": "@mcp-abap-adt/sap-rfc-lite",
   "version": "0.1.0",
   "description": "Lightweight Node.js bindings for SAP NW RFC SDK",
   "license": "Apache-2.0",

@@ -53,7 +53,7 @@ jobs:
             ## Installation
 
             ```bash
-            npm install sap-rfc-lite
+            npm install @mcp-abap-adt/sap-rfc-lite
             ```
 
             Requires SAP NW RFC SDK installed on the machine (`SAPNWRFC_HOME` env var).
