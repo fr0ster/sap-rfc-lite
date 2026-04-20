@@ -79,3 +79,7 @@ Each Client instance has its own `std::mutex` — multiple clients run in parall
 - Integration tests require a live SAP system with connection env files (`.env`)
 - Version in `package.json` — do not change without explicit request
 - Conventional Commits for git messages (`feat:`, `fix:`, `test:`, `chore:`)
+
+## Plans and Specs
+
+After a plan under `docs/superpowers/plans/` or spec under `docs/superpowers/specs/` has been fully implemented, delete the file. Keep only active (not yet implemented) plans and specs in the tree — implementation history lives in git, not in these directories.
