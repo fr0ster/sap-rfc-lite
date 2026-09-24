@@ -17,8 +17,10 @@
 #define uint_t uint32_t
 #define pointer_t uintptr_t
 
-// client binding version
-#define NODERFC_VERSION "0.1.0"
+// client binding version, injected by binding.gyp from package.json
+#ifndef NODERFC_VERSION
+#define NODERFC_VERSION "unknown"
+#endif
 
 // surpress unused parameter warnings
 #define UNUSED(x) (void)(x)

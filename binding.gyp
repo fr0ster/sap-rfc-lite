@@ -13,6 +13,7 @@
         'nwrfcsdk_lib_dir': '<(nwrfcsdk_dir)/lib',
         'napi_include_dir': "<!(node -p \"require('node-addon-api').include_dir\")",
         'napi_version': "<!(node -p \"require('./package.json').config.napi_version\")",
+        'package_version': "<!(node -p \"require('./package.json').version\")",
         'node_abi_version': '<!(node -p "process.versions.modules")',
         # per NodeJS build requirements: https://github.com/nodejs/node/blob/main/BUILDING.md
         'macosx_version_min': '10.15',
@@ -92,6 +93,7 @@
                 'SAPwithTHREADS',
                 'NAPI_CPP_EXCEPTIONS',
                 'NAPI_VERSION=<(napi_version)',
+                'NODERFC_VERSION="<(package_version)"',
                 'sapnwrfc_EXPORTS'
             ],
             'conditions': [
