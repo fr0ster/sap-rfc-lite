@@ -83,14 +83,15 @@ Each Client instance has its own `std::mutex` — multiple clients run in parall
 
 ## Releasing
 
+npm publishing is manual only, confirmed with a hardware security key (2FA). CI must never publish to npm: no trusted publishing (OIDC), no `NPM_TOKEN`. This keeps a human in every publish (npm supply-chain worms such as Shai-Hulud spread through stolen publish credentials).
+
 1. Bump the version: `npm version patch|minor|major` (commits `X.Y.Z` and creates tag `vX.Y.Z`).
 2. Push the commit and the tag: `git push origin master vX.Y.Z`.
-3. `.github/workflows/release.yml` then runs on the tag:
+3. `.github/workflows/release.yml` runs on the tag:
    - `check`: tag must equal `package.json` version, then lint, typecheck, tests;
-   - `publish`: `npm publish` via npm trusted publishing (OIDC, no token, provenance attached);
    - `github-release`: GitHub Release with generated notes.
-
-Trusted publishing must be configured once on npmjs.com (package settings → Trusted Publisher → GitHub Actions: user `fr0ster`, repository `sap-rfc-lite`, workflow `release.yml`). Without it the `publish` job fails and no GitHub Release is created; fix the setting and re-run the failed jobs.
+4. After the workflow succeeds, build and publish locally:
+   `npm run build:ts && npm pack --dry-run` (review the file list), then `npm publish --access public` and confirm with the security key.
 
 Dependency updates come from Dependabot (`.github/dependabot.yml`): weekly, with a 7-day cooldown for version updates. Security updates are opened immediately.
 
