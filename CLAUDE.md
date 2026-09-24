@@ -81,6 +81,19 @@ Each Client instance has its own `std::mutex` — multiple clients run in parall
 - Version in `package.json` — do not change without explicit request
 - Conventional Commits for git messages (`feat:`, `fix:`, `test:`, `chore:`)
 
+## Releasing
+
+1. Bump the version: `npm version patch|minor|major` (commits `X.Y.Z` and creates tag `vX.Y.Z`).
+2. Push the commit and the tag: `git push origin master vX.Y.Z`.
+3. `.github/workflows/release.yml` then runs on the tag:
+   - `check`: tag must equal `package.json` version, then lint, typecheck, tests;
+   - `publish`: `npm publish` via npm trusted publishing (OIDC, no token, provenance attached);
+   - `github-release`: GitHub Release with generated notes.
+
+Trusted publishing must be configured once on npmjs.com (package settings → Trusted Publisher → GitHub Actions: user `fr0ster`, repository `sap-rfc-lite`, workflow `release.yml`). Without it the `publish` job fails and no GitHub Release is created; fix the setting and re-run the failed jobs.
+
+Dependency updates come from Dependabot (`.github/dependabot.yml`): weekly, with a 7-day cooldown for version updates. Security updates are opened immediately.
+
 ## Plans and Specs
 
 Plans under `docs/superpowers/plans/` and specs under `docs/superpowers/specs/` are kept in the tree only while active — i.e. not yet implemented and not cancelled. Once a plan/spec has been fully implemented OR cancelled, delete the file. History lives in git; these directories hold only work in progress.
