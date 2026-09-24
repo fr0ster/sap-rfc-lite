@@ -23,7 +23,7 @@ No other lightweight alternative exists in the Node.js ecosystem. The only other
 | Source code | ~2,200 lines | ~14,200 lines |
 | Runtime dependencies | 2 | 4 (includes bluebird, decimal.js) |
 | Vulnerabilities (npm audit) | **0** | **24** |
-| Outdated packages | 5 (dev only) | 18 (including runtime) |
+| Outdated packages | 4 (dev only) | 18 (including runtime) |
 | API | Promise-based Client | Client, Pool, Server, Throughput |
 | Node.js requirement | >= 18 | >= 18 |
 | N-API version | 8 | 8 |
@@ -41,13 +41,47 @@ Set the `SAPNWRFC_HOME` environment variable to the SDK root directory (the fold
 ## Installation
 
 ```bash
-npm install sap-rfc-lite
+npm install @mcp-abap-adt/sap-rfc-lite
+```
+
+## Runtime library loading
+
+The addon is linked against the SDK shared libraries (`libsapnwrfc`, `libsapucum`) and, on Linux, the system `libuuid`. The dynamic loader must find all of them when the addon is loaded.
+
+On Linux and macOS the build embeds an rpath to `$SAPNWRFC_HOME/lib`, so the SDK libraries are found without extra settings as long as the SDK stays where it was at build time. Set the library search path when:
+
+- the SDK was moved, or the built addon is deployed to a machine where the SDK lives elsewhere;
+- Node.js ships its own glibc and does not search the system library directories (for example, Node.js installed via Homebrew on Linux). Loading then fails with `ERR_DLOPEN_FAILED` and `libuuid.so.1: cannot open shared object file`.
+
+| OS | Variable |
+|---|---|
+| Linux | `LD_LIBRARY_PATH` |
+| macOS | `DYLD_LIBRARY_PATH` |
+| Windows | `PATH` (must include `%SAPNWRFC_HOME%\lib`) |
+
+```bash
+# SDK moved or deployed elsewhere
+export LD_LIBRARY_PATH="$SAPNWRFC_HOME/lib:$LD_LIBRARY_PATH"
+```
+
+For a Node.js with its own glibc, do **not** add the whole system library directory (`/lib/x86_64-linux-gnu`): the loader would then take the system glibc, which may be older than the one Node.js was built against (`GLIBC_2.38 not found`). Expose only the missing library instead:
+
+```bash
+mkdir -p ~/.local/lib/sap-rfc-lite
+ln -sf /lib/x86_64-linux-gnu/libuuid.so.1 ~/.local/lib/sap-rfc-lite/
+export LD_LIBRARY_PATH="$HOME/.local/lib/sap-rfc-lite:$SAPNWRFC_HOME/lib:$LD_LIBRARY_PATH"
+```
+
+`binding.bindingVersions` reports the package version and the loaded SDK version, which is a quick check that the addon loads:
+
+```bash
+node -e "console.log(require('@mcp-abap-adt/sap-rfc-lite').binding.bindingVersions)"
 ```
 
 ## Usage
 
 ```typescript
-import { Client } from 'sap-rfc-lite';
+import { Client } from '@mcp-abap-adt/sap-rfc-lite';
 
 const client = new Client({
   ashost: '10.0.0.1',
