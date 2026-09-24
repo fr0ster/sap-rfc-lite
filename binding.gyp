@@ -93,7 +93,7 @@
                 'SAPwithTHREADS',
                 'NAPI_CPP_EXCEPTIONS',
                 'NAPI_VERSION=<(napi_version)',
-                'NODERFC_VERSION="<(package_version)"',
+                'NODERFC_VERSION=<(package_version)',
                 'sapnwrfc_EXPORTS'
             ],
             'conditions': [
