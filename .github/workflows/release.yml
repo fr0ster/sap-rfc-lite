@@ -6,22 +6,30 @@ on:
       - 'v*.*.*'
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  lint-and-typecheck:
+  check:
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: '20'
-          cache: 'npm'
 
+      - name: Verify tag matches package.json version
+        run: |
+          pkg_version=$(node -p "require('./package.json').version")
+          if [ "v${pkg_version}" != "${GITHUB_REF_NAME}" ]; then
+            echo "Tag ${GITHUB_REF_NAME} does not match package.json version ${pkg_version}"
+            exit 1
+          fi
+
+      # --ignore-scripts: the install script compiles the C++ addon, which needs the SAP NW RFC SDK
       - name: Install dependencies
         run: npm ci --ignore-scripts
 
@@ -31,24 +39,59 @@ jobs:
       - name: TypeScript typecheck
         run: npx tsc --noEmit
 
-  release:
-    needs: lint-and-typecheck
+      - name: Run tests
+        run: npm test
+
+  publish:
+    needs: check
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # npm trusted publishing (OIDC), also produces provenance
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
-      - name: Extract version from tag
-        id: version
-        run: echo "version=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+      # No dependency cache in the publishing job (cache poisoning protection)
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          registry-url: 'https://registry.npmjs.org'
+          package-manager-cache: false
 
+      - name: Verify npm supports trusted publishing
+        run: |
+          v=$(npm --version)
+          node -e "const [a,b,c]=process.argv[1].split('.').map(Number); process.exit(a>11||(a===11&&(b>5||(b===5&&c>=1)))?0:1)" "$v" \
+            || { echo "npm $v found, trusted publishing requires >= 11.5.1"; exit 1; }
+
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Build TypeScript
+        run: npm run build:ts
+
+      - name: Publish to npm
+        run: npm publish --access public
+        env:
+          HUSKY: '0'
+
+  github-release:
+    needs: publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v3
         with:
           generate_release_notes: true
           draft: false
           prerelease: false
+          # The generated notes append their own "What's Changed" section
           body: |
             ## Installation
 
@@ -57,7 +100,3 @@ jobs:
             ```
 
             Requires SAP NW RFC SDK installed on the machine (`SAPNWRFC_HOME` env var).
-
-            ## What's Changed
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
