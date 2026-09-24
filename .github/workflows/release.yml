@@ -42,44 +42,8 @@ jobs:
       - name: Run tests
         run: npm test
 
-  publish:
-    needs: check
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      id-token: write # npm trusted publishing (OIDC), also produces provenance
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v7
-
-      # No dependency cache in the publishing job (cache poisoning protection)
-      - name: Setup Node.js
-        uses: actions/setup-node@v7
-        with:
-          node-version: '24'
-          registry-url: 'https://registry.npmjs.org'
-          package-manager-cache: false
-
-      - name: Verify npm supports trusted publishing
-        run: |
-          v=$(npm --version)
-          node -e "const [a,b,c]=process.argv[1].split('.').map(Number); process.exit(a>11||(a===11&&(b>5||(b===5&&c>=1)))?0:1)" "$v" \
-            || { echo "npm $v found, trusted publishing requires >= 11.5.1"; exit 1; }
-
-      - name: Install dependencies
-        run: npm ci --ignore-scripts
-
-      - name: Build TypeScript
-        run: npm run build:ts
-
-      - name: Publish to npm
-        run: npm publish --access public
-        env:
-          HUSKY: '0'
-
   github-release:
-    needs: publish
+    needs: check
     runs-on: ubuntu-latest
     permissions:
       contents: write
