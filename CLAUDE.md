@@ -17,6 +17,7 @@ npm test                 # Jest with 60s timeout
 ```
 
 The `SAPNWRFC_HOME` env var must point to the NW RFC SDK root (containing `lib/` and `include/`).
+If the addon fails to load with `ERR_DLOPEN_FAILED`, see "Runtime library loading" in `README.md` (`LD_LIBRARY_PATH`).
 
 ## Architecture
 
