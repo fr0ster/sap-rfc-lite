@@ -16,6 +16,9 @@ updates:
       # Kept at the lowest supported Node.js line (engines: node >= 18).
       - dependency-name: "@types/node"
         update-types: ["version-update:semver-major"]
+      # ts-jest 29 supports only typescript < 7; remove once ts-jest supports 7.
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
     commit-message:
       prefix: "chore"
       include: "scope"
