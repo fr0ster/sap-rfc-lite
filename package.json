@@ -25,7 +25,7 @@
     "napi_version": 8
   },
   "dependencies": {
-    "node-addon-api": "^6.1.0",
+    "node-addon-api": "^8.9.2",
     "node-gyp-build": "^4.6.0"
   },
   "devDependencies": {
