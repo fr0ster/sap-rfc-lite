@@ -21,7 +21,7 @@ Napi::Value BindingVersions(Napi::Env env) {
   nwrfcsdk.Set("patchLevel", patchLevel);
 
   Napi::Object version = Napi::Object::New(env);
-  version.Set("version", NODERFC_VERSION);
+  version.Set("version", NODERFC_VERSION_STRING);
   version.Set("nwrfcsdk", nwrfcsdk);
 
   return scope.Escape(version);

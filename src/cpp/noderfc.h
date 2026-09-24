@@ -17,9 +17,14 @@
 #define uint_t uint32_t
 #define pointer_t uintptr_t
 
-// client binding version, injected by binding.gyp from package.json
-#ifndef NODERFC_VERSION
-#define NODERFC_VERSION "unknown"
+// client binding version, injected unquoted by binding.gyp from package.json
+// (stringified here to avoid platform-specific quoting of compiler defines)
+#define NODERFC_STRINGIFY_(x) #x
+#define NODERFC_STRINGIFY(x) NODERFC_STRINGIFY_(x)
+#ifdef NODERFC_VERSION
+#define NODERFC_VERSION_STRING NODERFC_STRINGIFY(NODERFC_VERSION)
+#else
+#define NODERFC_VERSION_STRING "unknown"
 #endif
 
 // surpress unused parameter warnings
