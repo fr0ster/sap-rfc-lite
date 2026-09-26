@@ -16,6 +16,7 @@ class Client : public Napi::ObjectWrap<Client> {
  public:
   friend class OpenAsync;
   friend class CloseAsync;
+  friend class ResetServerContextAsync;
   friend class PrepareAsync;
   friend class InvokeAsync;
   static Napi::Object Init(Napi::Env env, Napi::Object exports);
@@ -39,6 +40,7 @@ class Client : public Napi::ObjectWrap<Client> {
 
   Napi::Value Open(const Napi::CallbackInfo& info);
   Napi::Value Close(const Napi::CallbackInfo& info);
+  Napi::Value ResetServerContext(const Napi::CallbackInfo& info);
   Napi::Value Invoke(const Napi::CallbackInfo& info);
 
   RfmErrorPath errorPath;

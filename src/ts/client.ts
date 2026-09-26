@@ -56,6 +56,25 @@ export class Client {
     });
   }
 
+  /**
+   * Resets the ABAP session context this connection holds and keeps the
+   * connection open (`RfcResetServerContext`). The next call runs in a fresh
+   * context without a new logon. Whatever the context held is gone, including
+   * enqueue locks and program buffers.
+   */
+  resetServerContext(): Promise<void> {
+    return new Promise((resolve, reject) => {
+      try {
+        this.__client.resetServerContext((err: unknown) => {
+          if (err === undefined) resolve();
+          else reject(err);
+        });
+      } catch (ex) {
+        reject(ex);
+      }
+    });
+  }
+
   call(rfmName: string, rfmParams: RfcObject = {}): Promise<RfcObject> {
     return new Promise((resolve, reject) => {
       if (typeof rfmName !== 'string' || rfmName.length === 0) {

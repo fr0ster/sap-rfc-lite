@@ -123,6 +123,16 @@ Invokes a remote function module.
 - `rfmName` — name of the function module
 - `rfmParams` — optional input parameters
 
+### `client.resetServerContext(): Promise<void>`
+
+Resets the ABAP session context the connection holds and keeps the connection
+open (`RfcResetServerContext`). The next call runs in a fresh context, without
+a new logon.
+
+Everything the context held goes with it, including enqueue locks and program
+buffers. This is how a stateless call gets a clean session on a connection
+that is kept open.
+
 ### `client.close(): Promise<void>`
 
 Closes the RFC connection.

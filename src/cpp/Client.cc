@@ -48,6 +48,7 @@ Napi::Object Client::Init(Napi::Env env, Napi::Object exports) {
           InstanceAccessor("_alive", &Client::AliveGetter, nullptr),
           InstanceMethod("open", &Client::Open),
           InstanceMethod("close", &Client::Close),
+          InstanceMethod("resetServerContext", &Client::ResetServerContext),
           InstanceMethod("invoke", &Client::Invoke),
       });
 
@@ -172,6 +173,42 @@ class CloseAsync : public Napi::AsyncWorker {
 
     if (conn_closed) {
       Callback().Call({client->connectionClosedError("close()")});
+    } else if (errorInfo.code != RFC_OK) {
+      Callback().Call({rfcSdkError(&errorInfo)});
+    } else {
+      Callback().Call({});
+    }
+    Callback().Reset();
+  }
+
+ private:
+  Client* client;
+  RFC_ERROR_INFO errorInfo;
+  bool conn_closed = false;
+};
+
+// RfcResetServerContext: ends the ABAP session context ("user context") the
+// connection holds and keeps the connection open, so the next call runs in a
+// fresh context without a new logon.
+class ResetServerContextAsync : public Napi::AsyncWorker {
+ public:
+  ResetServerContextAsync(Napi::Function& callback, Client* client)
+      : Napi::AsyncWorker(callback), client(client) {}
+  ~ResetServerContextAsync() {}
+
+  void Execute() {
+    client->LockMutex();
+    conn_closed = (client->connectionHandle == nullptr);
+    if (!conn_closed) {
+      RfcResetServerContext(client->connectionHandle, &errorInfo);
+    }
+    client->UnlockMutex();
+  }
+
+  void OnOK() {
+    Napi::HandleScope scope(Env());
+    if (conn_closed) {
+      Callback().Call({client->connectionClosedError("resetServerContext()")});
     } else if (errorInfo.code != RFC_OK) {
       Callback().Call({rfcSdkError(&errorInfo)});
     } else {
@@ -409,6 +446,18 @@ Napi::Value Client::Close(const Napi::CallbackInfo& info) {
 
   (new CloseAsync(callback, this))->Queue();
 
+  return info.Env().Undefined();
+}
+
+Napi::Value Client::ResetServerContext(const Napi::CallbackInfo& info) {
+  if (!info[0].IsFunction()) {
+    Napi::TypeError::New(
+        info.Env(), "Client resetServerContext() requires a callback function")
+        .ThrowAsJavaScriptException();
+    return info.Env().Undefined();
+  }
+  Napi::Function callback = info[0].As<Napi::Function>();
+  (new ResetServerContextAsync(callback, this))->Queue();
   return info.Env().Undefined();
 }
 
