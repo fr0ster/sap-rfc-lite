@@ -15,6 +15,7 @@ export interface RfcClientBinding {
   _alive: boolean;
   open(callback: (err?: unknown) => void): void;
   close(callback: (err?: unknown) => void): void;
+  resetServerContext(callback: (err?: unknown) => void): void;
   invoke(
     rfmName: string,
     rfmParams: RfcObject,
