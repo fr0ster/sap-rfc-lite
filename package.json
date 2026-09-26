@@ -1,6 +1,6 @@
 {
   "name": "@mcp-abap-adt/sap-rfc-lite",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "description": "Lightweight Node.js bindings for SAP NW RFC SDK",
   "license": "Apache-2.0",
   "main": "./lib/index.js",
@@ -9,7 +9,8 @@
     "binding.gyp",
     "src",
     "lib",
-    "NOTICE"
+    "NOTICE",
+    "CHANGELOG.md"
   ],
   "scripts": {
     "install": "node-gyp-build",
