@@ -64,12 +64,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.1.1] - 2026-04-01
 
-Tagged, never published to npm; its changes reached the registry with 0.1.2.
+Tagged, never published to npm.
+
+### Changed
+
+- The package is renamed `@mcp-abap-adt/sap-rfc-lite`; the `v0.1.0` tag still
+  names it `sap-rfc-lite`.
 
 ### Added
 
-- Biome linter, CI and release workflows, and a husky pre-commit hook running
-  Biome.
 - README with the motivation, and CLAUDE.md with project guidance.
 
 ## [0.1.0] - 2026-04-01
@@ -81,9 +84,12 @@ Tagged, never published to npm; its changes reached the registry with 0.1.2.
 - The `nwrfcsdk` data marshalling layer, without its logging.
 - A native binding loader, `binding.gyp`, and minimal type definitions.
 - Tests of the Client API surface.
+- Biome linter, CI and release workflows, and a husky pre-commit hook running
+  Biome.
 
 The `v0.1.0` tag still names the package `sap-rfc-lite`. The 0.1.0 on npm was
-published as `@mcp-abap-adt/sap-rfc-lite`, from the commit that renamed it; the
+published as `@mcp-abap-adt/sap-rfc-lite`, from the rename commit (`0703285`,
+after the tag); the
 unscoped `sap-rfc-lite` was unpublished the same day.
 
 [0.2.1]: https://github.com/fr0ster/sap-rfc-lite/compare/v0.2.0...v0.2.1
