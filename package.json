@@ -1,6 +1,6 @@
 {
   "name": "@mcp-abap-adt/sap-rfc-lite",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Lightweight Node.js bindings for SAP NW RFC SDK",
   "license": "Apache-2.0",
   "main": "./lib/index.js",
@@ -14,6 +14,7 @@
   ],
   "scripts": {
     "install": "node-gyp-build",
+    "prebuild:ts": "node -e \"require('node:fs').rmSync('lib', { recursive: true, force: true })\"",
     "build:ts": "tsc",
     "build:cpp": "node-gyp rebuild",
     "build": "npm run build:ts && npm run build:cpp",
@@ -21,7 +22,8 @@
     "lint:check": "npx biome check src",
     "format": "npx biome format --write src",
     "test": "jest --testTimeout 60000",
-    "prepare": "husky"
+    "prepare": "husky",
+    "prepack": "npm run build:ts"
   },
   "config": {
     "napi_version": 8

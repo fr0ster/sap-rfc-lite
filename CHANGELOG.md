@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Releases before 0.2.0 were not recorded here.
 
+## [0.2.1] - 2026-09-27
+
+### Fixed
+
+- **0.2.0 shipped without `client.resetServerContext()` in its JavaScript.**
+  The tarball carried an older `lib/` (`lib/client.js` without the method),
+  while the native addon built from `src/` on install had it. A caller testing
+  for the method found none. `@mcp-abap-adt/connection` 9.4.0 is such a caller:
+  it quietly fell back to a new connection per stateless call.
+- **Packing builds `lib/` from `src/` first** (`prepack: npm run build:ts`),
+  for both `npm pack` and `npm publish`. `lib/` is not in git, so before this
+  change a package carried whatever `lib/` happened to be on disk.
+- **`build:ts` starts from an empty `lib/`** (`prebuild:ts`), so a file whose
+  source is gone cannot linger in the package.
+
 ## [0.2.0] - 2026-09-27
 
 ### Added
