@@ -25,7 +25,7 @@ No other lightweight alternative exists in the Node.js ecosystem. The only other
 | Runtime dependencies | 2 | 4 (includes bluebird, decimal.js) |
 | Vulnerabilities (npm audit) | **0** | **24** |
 | Outdated packages | 4 (dev only) | 18 (including runtime) |
-| API | Promise-based Client | Client, Pool, Server, Throughput |
+| API | Promise-based Client (`open`, `call`, `resetServerContext`, `close`) | Client, Pool, Server, Throughput |
 | Node.js requirement | >= 18 | >= 18 |
 | N-API version | 8 | 8 |
 
@@ -144,6 +144,10 @@ Unique client instance identifier.
 ### `client.alive: boolean`
 
 Whether the connection is currently open.
+
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md).
 
 ## License
 

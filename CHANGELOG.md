@@ -5,8 +5,6 @@ All notable changes to `@mcp-abap-adt/sap-rfc-lite` are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-Releases before 0.2.0 were not recorded here.
-
 ## [0.2.1] - 2026-09-27
 
 ### Fixed
@@ -43,4 +41,59 @@ Releases before 0.2.0 were not recorded here.
   - A reset costs about 0.1 s. Opening a new connection for each call costs
     about 0.5 s.
 
-[0.2.0]: https://github.com/fr0ster/sap-rfc-lite/releases/tag/v0.2.0
+## [0.1.2] - 2026-09-24
+
+### Fixed
+
+- `bindingVersions` reports the package version.
+- The binding version is passed to C++ unquoted and turned into a string
+  there.
+- `NOTICE` is included in the published package.
+
+### Changed
+
+- `node-addon-api` upgraded to v8.
+- `jest` and `@types/jest` upgraded to v30.
+- `npm audit` vulnerabilities resolved and in-range dev dependencies bumped.
+
+### Documentation
+
+- README: how the SDK's runtime libraries are loaded, and the package name
+  corrected.
+- README: Stand With Ukraine badge.
+
+## [0.1.1] - 2026-04-01
+
+Tagged, never published to npm.
+
+### Changed
+
+- The package is renamed `@mcp-abap-adt/sap-rfc-lite`; the `v0.1.0` tag still
+  names it `sap-rfc-lite`.
+
+### Added
+
+- README with the motivation, and CLAUDE.md with project guidance.
+
+## [0.1.0] - 2026-04-01
+
+### Added
+
+- First release: a stripped-down binding for the SAP NW RFC SDK with a
+  Promise-only `Client` — `open()`, `call()`, `close()`, `id`, `alive`.
+- The `nwrfcsdk` data marshalling layer, without its logging.
+- A native binding loader, `binding.gyp`, and minimal type definitions.
+- Tests of the Client API surface.
+- Biome linter, CI and release workflows, and a husky pre-commit hook running
+  Biome.
+
+The `v0.1.0` tag still names the package `sap-rfc-lite`. The 0.1.0 on npm was
+published as `@mcp-abap-adt/sap-rfc-lite`, from the rename commit (`0703285`,
+after the tag); the
+unscoped `sap-rfc-lite` was unpublished the same day.
+
+[0.2.1]: https://github.com/fr0ster/sap-rfc-lite/compare/v0.2.0...v0.2.1
+[0.2.0]: https://github.com/fr0ster/sap-rfc-lite/compare/v0.1.2...v0.2.0
+[0.1.2]: https://github.com/fr0ster/sap-rfc-lite/compare/v0.1.1...v0.1.2
+[0.1.1]: https://github.com/fr0ster/sap-rfc-lite/compare/v0.1.0...v0.1.1
+[0.1.0]: https://github.com/fr0ster/sap-rfc-lite/releases/tag/v0.1.0
