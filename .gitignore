@@ -4,3 +4,8 @@ build/
 prebuilds/
 *.node
 *.log
+
+# Connection env files hold SAP credentials
+*.env
+*.env.*
+!*.env.example
