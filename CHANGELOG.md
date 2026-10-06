@@ -5,6 +5,21 @@ All notable changes to `@mcp-abap-adt/sap-rfc-lite` are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.2] - 2026-10-06
+
+### Fixed
+
+- **macOS builds with a current Xcode.** `binding.gyp` targeted macOS 10.15;
+  the libc++ of current Command Line Tools rejects any target below 11.0, and
+  `-Werror` turned its `#warning` into a failed install
+  ("The selected platform is no longer supported by libc++"). The minimum is now
+  11.0, which Node 22, the oldest Node we build for, requires anyway.
+- **Builds under `FORCE_COLOR`.** `binding.gyp` read its values with `node -p`,
+  which colours a number when `FORCE_COLOR` is set (npm scripts and many CI
+  shells set it), so `NAPI_VERSION` became an ANSI sequence and the compiler
+  stopped at "token is not valid in preprocessor expressions". The values are
+  now written with `process.stdout.write(String(...))`, which never colours.
+
 ## [0.2.1] - 2026-09-27
 
 ### Fixed
