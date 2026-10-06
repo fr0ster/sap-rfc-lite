@@ -8,15 +8,17 @@
     'variables': {
         # SAPNWRFC_HOME_CLOUD is used in cloud deployents, like on Cloud Foundry
         # https://blogs.sap.com/2023/10/26/abap-rfc-connectivity-from-btp-node.js-buildpack/
-        'nwrfcsdk_dir': '<!(node -p "process.env.SAPNWRFC_HOME || process.env.SAPNWRFC_HOME_CLOUD")',
+        'nwrfcsdk_dir': "<!(node -e \"process.stdout.write(String(process.env.SAPNWRFC_HOME || process.env.SAPNWRFC_HOME_CLOUD))\")",
         'nwrfcsdk_include_dir': '<(nwrfcsdk_dir)/include',
         'nwrfcsdk_lib_dir': '<(nwrfcsdk_dir)/lib',
-        'napi_include_dir': "<!(node -p \"require('node-addon-api').include_dir\")",
-        'napi_version': "<!(node -p \"require('./package.json').config.napi_version\")",
-        'package_version': "<!(node -p \"require('./package.json').version\")",
-        'node_abi_version': '<!(node -p "process.versions.modules")',
-        # per NodeJS build requirements: https://github.com/nodejs/node/blob/main/BUILDING.md
-        'macosx_version_min': '10.15',
+        'napi_include_dir': "<!(node -e \"process.stdout.write(String(require('node-addon-api').include_dir))\")",
+        'napi_version': "<!(node -e \"process.stdout.write(String(require('./package.json').config.napi_version))\")",
+        'package_version': "<!(node -e \"process.stdout.write(String(require('./package.json').version))\")",
+        'node_abi_version': "<!(node -e \"process.stdout.write(String(process.versions.modules))\")",
+        # libc++ in current Xcode SDKs rejects targets below macOS 11 (-Werror turns its
+        # warning into a build failure); Node 22, our floor, needs 11 too.
+        # node -e + stdout.write, not node -p: -p colours numbers under FORCE_COLOR.
+        'macosx_version_min': '11.0',
         'cpp_standard': 'c++17',
         'target_name': 'sapnwrfc',
         'ccflags_defaults': [
