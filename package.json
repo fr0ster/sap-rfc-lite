@@ -12,7 +12,8 @@
     "prebuilds",
     "NOTICE",
     "CHANGELOG.md",
-    "scripts/install.js"
+    "scripts/install.js",
+    "scripts/prebuild-source.js"
   ],
   "scripts": {
     "install": "node scripts/install.js",
@@ -26,7 +27,7 @@
     "test": "jest --testTimeout 60000",
     "prepare": "husky",
     "prepack": "npm run build:ts",
-    "prebuild:native": "prebuildify --napi --strip",
+    "prebuild:native": "prebuildify --napi --strip && node scripts/prebuild-record.js",
     "check:prebuilds": "node scripts/check-prebuilds.js",
     "prepublishOnly": "npm run check:prebuilds"
   },

@@ -87,17 +87,25 @@ node -e "console.log(require('@mcp-abap-adt/sap-rfc-lite').binding.bindingVersio
 
 ## Prebuilt bindings (maintainers)
 
-Each prebuilt binding is built on its own platform, against the SDK installed there:
+The prebuilt bindings are **committed** under `prebuilds/<platform>-<arch>/`. Each is built once, on its own platform, against the SDK installed there, and reused until what it is built from changes:
 
 ```bash
-# on the target platform, with SAPNWRFC_HOME set
+# on the target platform: SAPNWRFC_HOME set, and its lib directory on the library path
+# (so the build can record the SDK version it was built against)
 npm ci
-npm run prebuild:native        # -> prebuilds/<platform>-<arch>/
+npm run prebuild:native        # -> prebuilds/<platform>-<arch>/*.node + BUILD.json
+git add prebuilds/<platform>-<arch>
 ```
 
-Before publishing, copy every target's `prebuilds/<platform>-<arch>/` folder into the publishing checkout. `prepublishOnly` (`npm run check:prebuilds`) refuses to publish while a target in `prebuildTargets` is missing. A binding is N-API, so one build per platform and architecture serves every supported Node.js version. It links to the SDK libraries dynamically and contains no SAP code.
+`BUILD.json` records what the binding was built from:
 
-On Linux the build embeds an rpath to the build machine's SDK directory. On another machine, set `LD_LIBRARY_PATH` as described above.
+- a hash of `src/cpp/` and `binding.gyp`;
+- the `node-addon-api` version;
+- the SDK version.
+
+`prepublishOnly` (`npm run check:prebuilds`) refuses to publish while a target in `prebuildTargets` has no binding, or has one built from other C++ sources. A change to the C++ sources, `binding.gyp` or `node-addon-api` therefore means rebuilding every target. A new SDK release is a reason to rebuild by hand.
+
+A binding is N-API, so one build per platform and architecture serves every supported Node.js version. It links to the SDK libraries dynamically and contains no SAP code. On Linux the build embeds an rpath to the build machine's SDK directory. On another machine, set `LD_LIBRARY_PATH` as described above.
 
 ## Usage
 

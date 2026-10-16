@@ -26,7 +26,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `scripts/install.js` uses the prebuild when one exists for the platform. Whether it loads is
   reported at run time, as before.
 - `prepublishOnly` refuses to publish while a target in `prebuildTargets` has no prebuilt
-  binding.
+  binding, or has one whose `BUILD.json` records other C++ sources (a hash of `src/cpp/`,
+  `binding.gyp` and the `node-addon-api` version).
+- The prebuilt bindings are committed to the repository, each with its `BUILD.json`, and reused
+  until those sources change.
 
 ## [0.2.2] - 2026-10-06
 

@@ -1,8 +1,10 @@
 node_modules/
 lib/
 build/
-prebuilds/
 *.node
+# The prebuilt bindings are committed: built once per platform, reused until the C++
+# sources, binding.gyp or node-addon-api change (scripts/check-prebuilds.js).
+!prebuilds/*/*.node
 *.log
 
 # Connection env files hold SAP credentials
