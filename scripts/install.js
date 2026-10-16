@@ -22,8 +22,16 @@ const { spawnSync } = require('node:child_process');
 
 const root = path.join(__dirname, '..');
 const dir = path.join(root, 'prebuilds', `${process.platform}-${process.arch}`);
+// The Linux prebuilds link against glibc (tagged `.glibc.` by prebuildify
+// --tag-libc, which node-gyp-build honours at run time). On musl (Alpine) none
+// of them can load, so compile there.
+const glibc =
+  process.platform !== 'linux' ||
+  Boolean(process.report?.getReport?.().header?.glibcVersionRuntime);
+const usable = (f) =>
+  f.endsWith('.node') && (process.platform !== 'linux' || f.includes('.glibc.'));
 const prebuilt =
-  fs.existsSync(dir) && fs.readdirSync(dir).some((f) => f.endsWith('.node'));
+  glibc && fs.existsSync(dir) && fs.readdirSync(dir).some(usable);
 const fromSource = /^(1|true)$/i.test(
   process.env.npm_config_build_from_source || '',
 );
@@ -36,9 +44,13 @@ if (prebuilt && !fromSource) {
   process.exit(0);
 }
 
+// node-gyp-build itself recognises only the exact value "true".
+const env = fromSource
+  ? { ...process.env, npm_config_build_from_source: 'true' }
+  : process.env;
 const result = spawnSync(
   process.execPath,
   [require.resolve('node-gyp-build/bin.js')],
-  { cwd: root, stdio: 'inherit' },
+  { cwd: root, stdio: 'inherit', env },
 );
 process.exit(result.status === null ? 1 : result.status);
