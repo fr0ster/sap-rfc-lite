@@ -26,6 +26,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **README: macOS needs `DYLD_LIBRARY_PATH`.** The SDK libraries carry `@loader_path` install names,
+  so an rpath does not find them, and the old text said it did. Also added: a note that SNC on
+  Apple Silicon may need x86_64 under Rosetta (unverified).
 - **The install step decides by the prebuild's presence, not by loading it.**
   `node-gyp-build`'s own step loads the prebuild to decide. Without the SDK libraries on the
   library path at install time, that load fails and it falls back to compiling. Where there is

@@ -55,7 +55,9 @@ The install step prints which way it took. `using the prebuilt binding for <plat
 
 The addon is linked against the SDK shared libraries (`libsapnwrfc`, `libsapucum`) and, on Linux, the system `libuuid`. The dynamic loader must find all of them when the addon is loaded.
 
-On Linux and macOS the build embeds an rpath to `$SAPNWRFC_HOME/lib`, so the SDK libraries are found without extra settings as long as the SDK stays where it was at build time. Set the library search path when:
+**macOS: always set `DYLD_LIBRARY_PATH`.** The macOS SDK's own libraries carry `@loader_path/…` install names, so the built addon looks for `libsapnwrfc.dylib` and `libsapucum.dylib` next to itself, not on the rpath. Point `DYLD_LIBRARY_PATH` at `$SAPNWRFC_HOME/lib`, or the addon does not load. This holds for a prebuilt binding and a locally compiled one alike.
+
+On Linux the build embeds an rpath to `$SAPNWRFC_HOME/lib`, so a locally compiled addon finds the SDK libraries without extra settings as long as the SDK stays where it was at build time. Set the library search path when:
 
 - the SDK was moved, or the built addon is deployed to a machine where the SDK lives elsewhere;
 - Node.js ships its own glibc and does not search the system library directories (for example, Node.js installed via Homebrew on Linux). Loading then fails with `ERR_DLOPEN_FAILED` and `libuuid.so.1: cannot open shared object file`.
@@ -105,7 +107,9 @@ git add prebuilds/<platform>-<arch>
 
 `prepublishOnly` (`npm run check:prebuilds`) refuses to publish while a target in `prebuildTargets` has no binding, or has one built from other C++ sources. A change to the C++ sources, `binding.gyp` or `node-addon-api` therefore means rebuilding every target. A new SDK release is a reason to rebuild by hand.
 
-A binding is N-API, so one build per platform and architecture serves every supported Node.js version. It links to the SDK libraries dynamically and contains no SAP code. On Linux the build embeds an rpath to the build machine's SDK directory. On another machine, set `LD_LIBRARY_PATH` as described above.
+A binding is N-API, so one build per platform and architecture serves every supported Node.js version. It links to the SDK libraries dynamically and contains no SAP code. A prebuilt binding's Linux rpath points at the build machine's SDK directory. On any other machine, set `LD_LIBRARY_PATH` (Linux), `DYLD_LIBRARY_PATH` (macOS) or `PATH` (Windows) as described above.
+
+**SNC on Apple Silicon (unverified).** A community report says the macOS Secure Login Client is still built for x86_64 only, and runs on Apple Silicon through Rosetta 2. If so, its SNC library cannot be loaded into an arm64 Node.js process, and SNC with the `darwin-arm64` binding will not work: it would need an x86_64 Node.js under Rosetta and a `darwin-x64` binding. Check with `lipo -archs` on the Secure Login Client's `libsapcrypto.dylib`.
 
 ## Usage
 
