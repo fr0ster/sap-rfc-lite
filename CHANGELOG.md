@@ -7,13 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.4] - 2026-10-16
+
 ### Fixed
 
 - **RFC calls returning BYTE or XSTRING fields no longer hang inside Electron (VS Code extension host).**
   This also fixes failures with "External buffers are not allowed". `NewOrCopy` keeps
-  zero-copy buffers where allowed and copies where external buffers are forbidden,
-  preserving the existing finalizers.
-  Prebuilt bindings must be rebuilt from these sources for every target before release.
+  zero-copy buffers where allowed (plain Node: unchanged) and copies where external buffers are
+  forbidden, preserving the existing finalizers. The prebuilt bindings for `linux-x64`,
+  `win32-x64` and `darwin-arm64` are rebuilt from these sources.
 
 ## [0.2.3] - 2026-10-16
 
@@ -160,6 +162,9 @@ published as `@mcp-abap-adt/sap-rfc-lite`, from the rename commit (`0703285`,
 after the tag); the
 unscoped `sap-rfc-lite` was unpublished the same day.
 
+[0.2.4]: https://github.com/fr0ster/sap-rfc-lite/compare/v0.2.3...v0.2.4
+[0.2.3]: https://github.com/fr0ster/sap-rfc-lite/compare/v0.2.2...v0.2.3
+[0.2.2]: https://github.com/fr0ster/sap-rfc-lite/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/fr0ster/sap-rfc-lite/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/fr0ster/sap-rfc-lite/compare/v0.1.2...v0.2.0
 [0.1.2]: https://github.com/fr0ster/sap-rfc-lite/compare/v0.1.1...v0.1.2
