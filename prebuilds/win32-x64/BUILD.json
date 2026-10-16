@@ -1,0 +1,12 @@
+{
+  "target": "win32-x64",
+  "binary": "@mcp-abap-adt+sap-rfc-lite.node",
+  "sourceHash": "8bc06be1777a4b9e11b7415a6f4023226c2dab4c1754513f833799b2c3f5ad53",
+  "nodeAddonApi": "8.9.2",
+  "sdk": {
+    "major": 7,
+    "minor": 53,
+    "patchLevel": 1533
+  },
+  "builtAt": "2026-10-16"
+}
