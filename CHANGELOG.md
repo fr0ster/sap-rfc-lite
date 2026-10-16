@@ -10,7 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **Prebuilt bindings: no compile on install** for the platforms in `prebuildTargets`
-  (`linux-x64`, `win32-x64`).
+  (`linux-x64`, `win32-x64`, `darwin-arm64`).
   - The package carries an N-API binding per platform under `prebuilds/`, built with
     `prebuildify`.
   - There `npm install` needs neither a C++ toolchain nor `SAPNWRFC_HOME`. The SDK libraries
