@@ -5,6 +5,51 @@ All notable changes to `@mcp-abap-adt/sap-rfc-lite` are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+## [0.2.3] - 2026-10-16
+
+### Added
+
+- **Prebuilt bindings: no compile on install** for the platforms in `prebuildTargets`
+  (`linux-x64`, `win32-x64`, `darwin-arm64`).
+  - The package carries an N-API binding per platform under `prebuilds/`, built with
+    `prebuildify`.
+  - There `npm install` needs neither a C++ toolchain nor `SAPNWRFC_HOME`. The SDK libraries
+    must still be loadable at run time.
+  - Other platforms, and `--build-from-source`, compile as before.
+
+### Fixed
+
+- **Builds with current clang on macOS.** `RFC_LOG("…")` called with no arguments after the
+  format left the macro's `...` empty. Current clang treats that as a C++20 extension
+  (`-Wvariadic-macro-arguments-omitted`), and `-Werror` turned it into a failed install. The
+  macro now takes the format as the first of `__VA_ARGS__`.
+
+### Changed
+
+- **README: macOS needs `DYLD_LIBRARY_PATH`.** The SDK libraries carry `@loader_path` install names,
+  so an rpath does not find them, and the old text said it did. Also added: a note that SNC on
+  Apple Silicon may need x86_64 under Rosetta (unverified).
+- **The install step decides by the prebuild's presence, not by loading it.**
+  `node-gyp-build`'s own step loads the prebuild to decide. Without the SDK libraries on the
+  library path at install time, that load fails and it falls back to compiling. Where there is
+  no toolchain the compile fails, and npm drops the optional dependency silently.
+  `scripts/install.js` uses the prebuild when one exists for the platform. Whether it loads is
+  reported at run time, as before.
+- **Linux prebuilds are tagged `glibc`** (`prebuildify --tag-libc`). On musl (Alpine) the install
+  step compiles instead, and `node-gyp-build` does not pick the glibc binding at run time.
+- **`--build-from-source` with any accepted value** (`1`, `true`, `TRUE`) is passed on to
+  `node-gyp-build` as `"true"`, the only value it recognises.
+- **`bindingVersions.version` is read from `package.json`.** The addon compiles the version in,
+  so a prebuilt binding reused across releases would otherwise report the release it was built
+  for.
+- `prepublishOnly` refuses to publish while a target in `prebuildTargets` has no prebuilt
+  binding, or has one whose `BUILD.json` records other C++ sources (a hash of `src/cpp/`,
+  `binding.gyp` and the `node-addon-api` version).
+- The prebuilt bindings are committed to the repository, each with its `BUILD.json`, and reused
+  until those sources change.
+
 ## [0.2.2] - 2026-10-06
 
 ### Fixed

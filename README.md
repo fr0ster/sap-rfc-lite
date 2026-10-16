@@ -34,10 +34,14 @@ This project focuses on what most users actually need — a clean, modern, Promi
 ## Prerequisites
 
 - Node.js >= 18
-- SAP NetWeaver RFC SDK installed
-- C++ build tools (Visual Studio Build Tools on Windows, GCC/Clang on Linux/macOS)
+- SAP NetWeaver RFC SDK installed. SAP does not allow redistributing it, so it is never part of this package.
 
-Set the `SAPNWRFC_HOME` environment variable to the SDK root directory (the folder containing `lib/` and `include/`).
+**On a platform with a prebuilt binding, nothing is compiled.** The package carries a prebuilt N-API binding for each platform listed in `prebuildTargets` in `package.json` (currently `linux-x64` with glibc, `win32-x64` and `darwin-arm64`; Linux with musl, such as Alpine, builds from source). There `npm install` uses it and needs no C++ toolchain and no `SAPNWRFC_HOME`. The SDK libraries only have to be loadable when the binding is loaded (see [Runtime library loading](#runtime-library-loading)).
+
+**Elsewhere, or with `npm install --build-from-source`, the binding is compiled at install.** That needs:
+
+- C++ build tools (Visual Studio Build Tools on Windows, GCC/Clang on Linux/macOS);
+- the `SAPNWRFC_HOME` environment variable set to the SDK root directory (the folder containing `lib/` and `include/`).
 
 ## Installation
 
@@ -45,11 +49,15 @@ Set the `SAPNWRFC_HOME` environment variable to the SDK root directory (the fold
 npm install @mcp-abap-adt/sap-rfc-lite
 ```
 
+The install step prints which way it took. `using the prebuilt binding for <platform>-<arch>` means nothing was compiled. When it compiles and the compile fails, npm drops an optional dependency silently, so check that line when the package is installed as one.
+
 ## Runtime library loading
 
 The addon is linked against the SDK shared libraries (`libsapnwrfc`, `libsapucum`) and, on Linux, the system `libuuid`. The dynamic loader must find all of them when the addon is loaded.
 
-On Linux and macOS the build embeds an rpath to `$SAPNWRFC_HOME/lib`, so the SDK libraries are found without extra settings as long as the SDK stays where it was at build time. Set the library search path when:
+**macOS: always set `DYLD_LIBRARY_PATH`.** The macOS SDK's own libraries carry `@loader_path/…` install names, so the built addon looks for `libsapnwrfc.dylib` and `libsapucum.dylib` next to itself, not on the rpath. Point `DYLD_LIBRARY_PATH` at `$SAPNWRFC_HOME/lib`, or the addon does not load. This holds for a prebuilt binding and a locally compiled one alike.
+
+On Linux the build embeds an rpath to `$SAPNWRFC_HOME/lib`, so a locally compiled addon finds the SDK libraries without extra settings as long as the SDK stays where it was at build time. Set the library search path when:
 
 - the SDK was moved, or the built addon is deployed to a machine where the SDK lives elsewhere;
 - Node.js ships its own glibc and does not search the system library directories (for example, Node.js installed via Homebrew on Linux). Loading then fails with `ERR_DLOPEN_FAILED` and `libuuid.so.1: cannot open shared object file`.
@@ -78,6 +86,30 @@ export LD_LIBRARY_PATH="$HOME/.local/lib/sap-rfc-lite:$SAPNWRFC_HOME/lib:$LD_LIB
 ```bash
 node -e "console.log(require('@mcp-abap-adt/sap-rfc-lite').binding.bindingVersions)"
 ```
+
+## Prebuilt bindings (maintainers)
+
+The prebuilt bindings are **committed** under `prebuilds/<platform>-<arch>/`. Each is built once, on its own platform, against the SDK installed there, and reused until what it is built from changes:
+
+```bash
+# on the target platform: SAPNWRFC_HOME set, and its lib directory on the library path
+# (so the build can record the SDK version it was built against)
+npm ci
+npm run prebuild:native        # -> prebuilds/<platform>-<arch>/*.node + BUILD.json
+git add prebuilds/<platform>-<arch>
+```
+
+`BUILD.json` records what the binding was built from:
+
+- a hash of `src/cpp/` and `binding.gyp`;
+- the `node-addon-api` version;
+- the SDK version.
+
+`prepublishOnly` (`npm run check:prebuilds`) refuses to publish while a target in `prebuildTargets` has no binding, or has one built from other C++ sources. A change to the C++ sources, `binding.gyp` or `node-addon-api` therefore means rebuilding every target. A new SDK release is a reason to rebuild by hand.
+
+A binding is N-API, so one build per platform and architecture serves every supported Node.js version. It links to the SDK libraries dynamically and contains no SAP code. A prebuilt binding's Linux rpath points at the build machine's SDK directory. On any other machine, set `LD_LIBRARY_PATH` (Linux), `DYLD_LIBRARY_PATH` (macOS) or `PATH` (Windows) as described above.
+
+**SNC on Apple Silicon (unverified).** A community report says the macOS Secure Login Client is still built for x86_64 only, and runs on Apple Silicon through Rosetta 2. If so, its SNC library cannot be loaded into an arm64 Node.js process, and SNC with the `darwin-arm64` binding will not work: it would need an x86_64 Node.js under Rosetta and a `darwin-x64` binding. Check with `lipo -archs` on the Secure Login Client's `libsapcrypto.dylib`.
 
 ## Usage
 

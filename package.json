@@ -1,6 +1,6 @@
 {
   "name": "@mcp-abap-adt/sap-rfc-lite",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "Lightweight Node.js bindings for SAP NW RFC SDK",
   "license": "Apache-2.0",
   "main": "./lib/index.js",
@@ -9,11 +9,14 @@
     "binding.gyp",
     "src",
     "lib",
+    "prebuilds",
     "NOTICE",
-    "CHANGELOG.md"
+    "CHANGELOG.md",
+    "scripts/install.js",
+    "scripts/prebuild-source.js"
   ],
   "scripts": {
-    "install": "node-gyp-build",
+    "install": "node scripts/install.js",
     "prebuild:ts": "node -e \"require('node:fs').rmSync('lib', { recursive: true, force: true })\"",
     "build:ts": "tsc",
     "build:cpp": "node-gyp rebuild",
@@ -23,7 +26,10 @@
     "format": "npx biome format --write src",
     "test": "jest --testTimeout 60000",
     "prepare": "husky",
-    "prepack": "npm run build:ts"
+    "prepack": "npm run build:ts",
+    "prebuild:native": "prebuildify --napi --strip --tag-libc && node scripts/prebuild-record.js",
+    "check:prebuilds": "node scripts/check-prebuilds.js",
+    "prepublishOnly": "npm run check:prebuilds"
   },
   "config": {
     "napi_version": 8
@@ -38,6 +44,7 @@
     "@types/node": "^20.0.0",
     "husky": "^9.1.7",
     "jest": "^30.5.1",
+    "prebuildify": "^6.0.1",
     "ts-jest": "^29.0.0",
     "ts-node": "^10.9.2",
     "typescript": "^5.0.0"
@@ -45,5 +52,10 @@
   "engines": {
     "node": ">=18"
   },
-  "gypfile": true
+  "gypfile": true,
+  "prebuildTargets": [
+    "linux-x64",
+    "win32-x64",
+    "darwin-arm64"
+  ]
 }

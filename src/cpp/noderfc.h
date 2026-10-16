@@ -49,12 +49,16 @@
 
 #define ENV_UNDEFINED node_rfc::__env.Undefined()
 
-// Minimal logging — no-op by default, stderr in debug builds
+// Minimal logging — no-op by default, stderr in debug builds.
+// The format is the first of __VA_ARGS__ rather than a named parameter: a call
+// with no arguments after the format would otherwise leave `...` empty, which
+// current clang (macOS) rejects under -Werror as a C++20 extension
+// (-Wvariadic-macro-arguments-omitted), and `##__VA_ARGS__` is a GNU extension.
 #ifdef SAP_RFC_LITE_DEBUG
   #include <cstdio>
-  #define RFC_LOG(fmt, ...) fprintf(stderr, "[sap-rfc-lite] " fmt "\n", ##__VA_ARGS__)
+  #define RFC_LOG(...) (fprintf(stderr, "[sap-rfc-lite] " __VA_ARGS__), fputc('\n', stderr))
 #else
-  #define RFC_LOG(fmt, ...) ((void)0)
+  #define RFC_LOG(...) ((void)0)
 #endif
 
 #endif
