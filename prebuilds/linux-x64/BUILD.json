@@ -1,7 +1,7 @@
 {
   "target": "linux-x64",
   "binary": "@mcp-abap-adt+sap-rfc-lite.node",
-  "sourceHash": "8bc06be1777a4b9e11b7415a6f4023226c2dab4c1754513f833799b2c3f5ad53",
+  "sourceHash": "fafeb0f2977225f9055a099412a953e73def7c782ab2da5f0e91f8c5590adf13",
   "nodeAddonApi": "8.9.2",
   "sdk": {
     "major": 7500,

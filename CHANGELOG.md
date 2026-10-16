@@ -17,6 +17,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     must still be loadable at run time.
   - Other platforms, and `--build-from-source`, compile as before.
 
+### Fixed
+
+- **Builds with current clang on macOS.** `RFC_LOG("…")` called with no arguments after the
+  format left the macro's `...` empty. Current clang treats that as a C++20 extension
+  (`-Wvariadic-macro-arguments-omitted`), and `-Werror` turned it into a failed install. The
+  macro now takes the format as the first of `__VA_ARGS__`.
+
 ### Changed
 
 - **The install step decides by the prebuild's presence, not by loading it.**
