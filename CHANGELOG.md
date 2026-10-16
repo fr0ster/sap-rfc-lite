@@ -5,6 +5,29 @@ All notable changes to `@mcp-abap-adt/sap-rfc-lite` are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Prebuilt bindings: no compile on install** for the platforms in `prebuildTargets`
+  (`linux-x64`, `win32-x64`).
+  - The package carries an N-API binding per platform under `prebuilds/`, built with
+    `prebuildify`.
+  - There `npm install` needs neither a C++ toolchain nor `SAPNWRFC_HOME`. The SDK libraries
+    must still be loadable at run time.
+  - Other platforms, and `--build-from-source`, compile as before.
+
+### Changed
+
+- **The install step decides by the prebuild's presence, not by loading it.**
+  `node-gyp-build`'s own step loads the prebuild to decide. Without the SDK libraries on the
+  library path at install time, that load fails and it falls back to compiling. Where there is
+  no toolchain the compile fails, and npm drops the optional dependency silently.
+  `scripts/install.js` uses the prebuild when one exists for the platform. Whether it loads is
+  reported at run time, as before.
+- `prepublishOnly` refuses to publish while a target in `prebuildTargets` has no prebuilt
+  binding.
+
 ## [0.2.2] - 2026-10-06
 
 ### Fixed

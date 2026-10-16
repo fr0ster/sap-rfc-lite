@@ -34,16 +34,22 @@ This project focuses on what most users actually need — a clean, modern, Promi
 ## Prerequisites
 
 - Node.js >= 18
-- SAP NetWeaver RFC SDK installed
-- C++ build tools (Visual Studio Build Tools on Windows, GCC/Clang on Linux/macOS)
+- SAP NetWeaver RFC SDK installed. SAP does not allow redistributing it, so it is never part of this package.
 
-Set the `SAPNWRFC_HOME` environment variable to the SDK root directory (the folder containing `lib/` and `include/`).
+**On a platform with a prebuilt binding, nothing is compiled.** The package carries a prebuilt N-API binding for each platform listed in `prebuildTargets` in `package.json` (currently `linux-x64` and `win32-x64`). There `npm install` uses it and needs no C++ toolchain and no `SAPNWRFC_HOME`. The SDK libraries only have to be loadable when the binding is loaded (see [Runtime library loading](#runtime-library-loading)).
+
+**Elsewhere, or with `npm install --build-from-source`, the binding is compiled at install.** That needs:
+
+- C++ build tools (Visual Studio Build Tools on Windows, GCC/Clang on Linux/macOS);
+- the `SAPNWRFC_HOME` environment variable set to the SDK root directory (the folder containing `lib/` and `include/`).
 
 ## Installation
 
 ```bash
 npm install @mcp-abap-adt/sap-rfc-lite
 ```
+
+The install step prints which way it took. `using the prebuilt binding for <platform>-<arch>` means nothing was compiled. When it compiles and the compile fails, npm drops an optional dependency silently, so check that line when the package is installed as one.
 
 ## Runtime library loading
 
@@ -78,6 +84,20 @@ export LD_LIBRARY_PATH="$HOME/.local/lib/sap-rfc-lite:$SAPNWRFC_HOME/lib:$LD_LIB
 ```bash
 node -e "console.log(require('@mcp-abap-adt/sap-rfc-lite').binding.bindingVersions)"
 ```
+
+## Prebuilt bindings (maintainers)
+
+Each prebuilt binding is built on its own platform, against the SDK installed there:
+
+```bash
+# on the target platform, with SAPNWRFC_HOME set
+npm ci
+npm run prebuild:native        # -> prebuilds/<platform>-<arch>/
+```
+
+Before publishing, copy every target's `prebuilds/<platform>-<arch>/` folder into the publishing checkout. `prepublishOnly` (`npm run check:prebuilds`) refuses to publish while a target in `prebuildTargets` is missing. A binding is N-API, so one build per platform and architecture serves every supported Node.js version. It links to the SDK libraries dynamically and contains no SAP code.
+
+On Linux the build embeds an rpath to the build machine's SDK directory. On another machine, set `LD_LIBRARY_PATH` as described above.
 
 ## Usage
 
