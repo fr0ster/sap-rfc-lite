@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **RFC calls returning BYTE or XSTRING fields no longer hang inside Electron (VS Code extension host).**
+  This also fixes failures with "External buffers are not allowed". `NewOrCopy` keeps
+  zero-copy buffers where allowed and copies where external buffers are forbidden,
+  preserving the existing finalizers.
+  Prebuilt bindings must be rebuilt from these sources for every target before release.
+
 ## [0.2.3] - 2026-10-16
 
 ### Added

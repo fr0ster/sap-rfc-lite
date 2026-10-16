@@ -603,7 +603,7 @@ ValuePair getVariable(RFCTYPE typ,
         delete[] byteValue;
         break;
       }
-      resultValue = Napi::Buffer<SAP_RAW>::New(
+      resultValue = Napi::Buffer<SAP_RAW>::NewOrCopy(
           node_rfc::__env, byteValue, cLen, [](void*, SAP_RAW* byteValue) {
             delete[] byteValue;
           });
@@ -624,7 +624,7 @@ ValuePair getVariable(RFCTYPE typ,
         delete[] byteValue;
         break;
       }
-      resultValue = Napi::Buffer<SAP_RAW>::New(
+      resultValue = Napi::Buffer<SAP_RAW>::NewOrCopy(
           node_rfc::__env, byteValue, resultLen, [](void*, SAP_RAW* byteValue) {
             delete[] byteValue;
           });
