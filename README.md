@@ -36,7 +36,7 @@ This project focuses on what most users actually need — a clean, modern, Promi
 - Node.js >= 18
 - SAP NetWeaver RFC SDK installed. SAP does not allow redistributing it, so it is never part of this package.
 
-**On a platform with a prebuilt binding, nothing is compiled.** The package carries a prebuilt N-API binding for each platform listed in `prebuildTargets` in `package.json` (currently `linux-x64`, `win32-x64`, `darwin-arm64` and `darwin-x64`). There `npm install` uses it and needs no C++ toolchain and no `SAPNWRFC_HOME`. The SDK libraries only have to be loadable when the binding is loaded (see [Runtime library loading](#runtime-library-loading)).
+**On a platform with a prebuilt binding, nothing is compiled.** The package carries a prebuilt N-API binding for each platform listed in `prebuildTargets` in `package.json` (currently `linux-x64`, `win32-x64` and `darwin-arm64`). There `npm install` uses it and needs no C++ toolchain and no `SAPNWRFC_HOME`. The SDK libraries only have to be loadable when the binding is loaded (see [Runtime library loading](#runtime-library-loading)).
 
 **Elsewhere, or with `npm install --build-from-source`, the binding is compiled at install.** That needs:
 
