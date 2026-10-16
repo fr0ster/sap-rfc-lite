@@ -24,7 +24,9 @@ const root = path.join(__dirname, '..');
 const dir = path.join(root, 'prebuilds', `${process.platform}-${process.arch}`);
 // The Linux prebuilds link against glibc (tagged `.glibc.` by prebuildify
 // --tag-libc, which node-gyp-build honours at run time). On musl (Alpine) none
-// of them can load, so compile there.
+// of them can load, so compile there. node-gyp-build's own musl check at run
+// time looks for /etc/alpine-release only; on another musl distribution it is
+// the compiled build/Release, which it prefers over prebuilds, that loads.
 const glibc =
   process.platform !== 'linux' ||
   Boolean(process.report?.getReport?.().header?.glibcVersionRuntime);

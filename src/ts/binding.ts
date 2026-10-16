@@ -51,8 +51,17 @@ try {
 // The addon compiles the package version in, so a prebuilt binding reused
 // across releases would report the release it was built for. The version is
 // the package's, read here.
-binding.bindingVersions.version = (
-  require(path.resolve(__dirname, '..', 'package.json')) as { version: string }
-).version;
+// A new object rather than a write: the addon's own may be frozen or absent.
+binding = {
+  ...binding,
+  bindingVersions: {
+    ...binding.bindingVersions,
+    version: (
+      require(path.resolve(__dirname, '..', 'package.json')) as {
+        version: string;
+      }
+    ).version,
+  },
+};
 
 export { binding };
