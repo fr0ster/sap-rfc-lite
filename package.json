@@ -27,7 +27,7 @@
     "test": "jest --testTimeout 60000",
     "prepare": "husky",
     "prepack": "npm run build:ts",
-    "prebuild:native": "prebuildify --napi --strip --tag-libc && node scripts/prebuild-record.js",
+    "prebuild:native": "node scripts/prebuild-native.js",
     "check:prebuilds": "node scripts/check-prebuilds.js",
     "prepublishOnly": "npm run check:prebuilds"
   },
@@ -42,6 +42,7 @@
     "@biomejs/biome": "^2.5.14",
     "@types/jest": "^30.0.0",
     "@types/node": "^20.0.0",
+    "esbuild": "^0.28.2",
     "husky": "^9.1.7",
     "jest": "^30.5.1",
     "prebuildify": "^6.0.1",
