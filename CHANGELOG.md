@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **`bindingVersions.version` works inside a bundle.** `lib/binding.js` read `package.json`
+  through a path computed at run time (`path.resolve(__dirname, '..', 'package.json')`). A
+  bundler cannot inline that, and inside a bundle or a Node.js single-executable application,
+  where no `package.json` lies next to the code, loading the package threw, so no RFC call
+  worked. The read is now a literal `require('../package.json')`, which bundlers inline. The
+  reported version is still the package's, not the release a prebuilt binding was built for.
+  `test/bundle.test.ts` bundles the compiled binding with esbuild (new dev dependency) and runs
+  it where no `package.json` exists.
+- **Prebuilt bindings carry no path of the machine they were built on.** The Linux prebuild had
+  a `RUNPATH` to the builder's SDK directory under the builder's home, the macOS one an
+  `LC_RPATH` likewise, and the Windows one the builder's absolute PDB path. Those paths exist
+  nowhere else, so they found nothing for any user, and they leaked a home directory.
+  `npm run prebuild:native` (now `scripts/prebuild-native.js`) builds with
+  `SAP_RFC_LITE_PREBUILD=1`, for which `binding.gyp` adds no rpath (Linux, macOS) and links with
+  `/PDBALTPATH:%_PDB%` (Windows). `scripts/prebuild-record.js` refuses to record a binding that
+  holds the build machine's home directory or SDK path. A binding compiled on the user's machine
+  keeps its rpath to the user's SDK, as before. Finding the SDK is unchanged for every user: the
+  library search path (`LD_LIBRARY_PATH` or the system's on Linux, `DYLD_LIBRARY_PATH` on macOS,
+  `PATH` on Windows); README, "Runtime library loading", now says which applies to which binding.
+  The `linux-x64` prebuild is rebuilt; `binding.gyp` changed, so `darwin-arm64` and `win32-x64`
+  must be rebuilt on their platforms before the release (`check:prebuilds` refuses until then).
+
 ## [0.2.4] - 2026-10-16
 
 ### Fixed

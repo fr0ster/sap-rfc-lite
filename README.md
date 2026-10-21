@@ -53,25 +53,30 @@ The install step prints which way it took. `using the prebuilt binding for <plat
 
 ## Runtime library loading
 
-The addon is linked against the SDK shared libraries (`libsapnwrfc`, `libsapucum`) and, on Linux, the system `libuuid`. The dynamic loader must find all of them when the addon is loaded.
+The addon is linked against the SDK shared libraries (`libsapnwrfc`, `libsapucum`) and, on Linux, the system `libuuid`. The dynamic loader must find all of them when the addon is loaded. The package does not load the SDK itself: it has no code that looks for the SDK or preloads it by path, and `SAPNWRFC_HOME` is read only when the binding is compiled. What finds the SDK at run time is the operating system's loader:
 
-**macOS: always set `DYLD_LIBRARY_PATH`.** The macOS SDK's own libraries carry `@loader_path/…` install names, so the built addon looks for `libsapnwrfc.dylib` and `libsapucum.dylib` next to itself, not on the rpath. Point `DYLD_LIBRARY_PATH` at `$SAPNWRFC_HOME/lib`, or the addon does not load. This holds for a prebuilt binding and a locally compiled one alike.
+| | Prebuilt binding | Binding compiled on your machine |
+|---|---|---|
+| Linux | the library search path: `LD_LIBRARY_PATH`, or the system's (`/etc/ld.so.conf.d`, then `ldconfig`) | an rpath to `$SAPNWRFC_HOME/lib` as it was at build time, then the library search path |
+| macOS | `DYLD_LIBRARY_PATH` | `DYLD_LIBRARY_PATH` |
+| Windows | `PATH` (must include `%SAPNWRFC_HOME%\lib`) | `PATH` |
 
-On Linux the build embeds an rpath to `$SAPNWRFC_HOME/lib`, so a locally compiled addon finds the SDK libraries without extra settings as long as the SDK stays where it was at build time. Set the library search path when:
-
-- the SDK was moved, or the built addon is deployed to a machine where the SDK lives elsewhere;
-- Node.js ships its own glibc and does not search the system library directories (for example, Node.js installed via Homebrew on Linux). Loading then fails with `ERR_DLOPEN_FAILED` and `libuuid.so.1: cannot open shared object file`.
-
-| OS | Variable |
-|---|---|
-| Linux | `LD_LIBRARY_PATH` |
-| macOS | `DYLD_LIBRARY_PATH` |
-| Windows | `PATH` (must include `%SAPNWRFC_HOME%\lib`) |
+**A prebuilt binding carries no path of the machine it was built on**: no rpath (Linux, macOS), no absolute PDB path (Windows). So on Linux it always needs the SDK's `lib` directory on the library search path, wherever the SDK is installed:
 
 ```bash
-# SDK moved or deployed elsewhere
 export LD_LIBRARY_PATH="$SAPNWRFC_HOME/lib:$LD_LIBRARY_PATH"
+# or, system-wide:
+echo "$SAPNWRFC_HOME/lib" | sudo tee /etc/ld.so.conf.d/nwrfcsdk.conf && sudo ldconfig
 ```
+
+**macOS: always set `DYLD_LIBRARY_PATH`.** The macOS SDK's own libraries carry `@loader_path/…` install names, so the addon looks for `libsapnwrfc.dylib` and `libsapucum.dylib` next to itself, not on the rpath. Point `DYLD_LIBRARY_PATH` at `$SAPNWRFC_HOME/lib`, or the addon does not load. This holds for a prebuilt binding and a locally compiled one alike.
+
+**A binding compiled on Linux** (`--build-from-source`, or a platform with no prebuilt binding) embeds an rpath to `$SAPNWRFC_HOME/lib`, so it finds the SDK libraries without extra settings as long as the SDK stays where it was at build time. Set the library search path when:
+
+- the SDK was moved, or the built addon is deployed to a machine where the SDK lives elsewhere;
+- Node.js ships its own glibc and does not search the system library directories (see below).
+
+**Node.js with its own glibc** (for example, Node.js installed via Homebrew on Linux) does not search the system library directories, whichever binding is used. Loading then fails with `ERR_DLOPEN_FAILED` and `libuuid.so.1: cannot open shared object file`.
 
 For a Node.js with its own glibc, do **not** add the whole system library directory (`/lib/x86_64-linux-gnu`): the loader would then take the system glibc, which may be older than the one Node.js was built against (`GLIBC_2.38 not found`). Expose only the missing library instead:
 
@@ -81,7 +86,7 @@ ln -sf /lib/x86_64-linux-gnu/libuuid.so.1 ~/.local/lib/sap-rfc-lite/
 export LD_LIBRARY_PATH="$HOME/.local/lib/sap-rfc-lite:$SAPNWRFC_HOME/lib:$LD_LIBRARY_PATH"
 ```
 
-`binding.bindingVersions` reports the package version and the loaded SDK version, which is a quick check that the addon loads:
+`binding.bindingVersions` reports the package version and the loaded SDK version, which is a quick check that the addon loads. The package version is read from `package.json` through a literal path, so a bundler (esbuild, webpack, rollup) inlines it and a bundle or a Node.js single-executable application reports it too:
 
 ```bash
 node -e "console.log(require('@mcp-abap-adt/sap-rfc-lite').binding.bindingVersions)"
@@ -107,7 +112,9 @@ git add prebuilds/<platform>-<arch>
 
 `prepublishOnly` (`npm run check:prebuilds`) refuses to publish while a target in `prebuildTargets` has no binding, or has one built from other C++ sources. A change to the C++ sources, `binding.gyp` or `node-addon-api` therefore means rebuilding every target. A new SDK release is a reason to rebuild by hand.
 
-A binding is N-API, so one build per platform and architecture serves every supported Node.js version. It links to the SDK libraries dynamically and contains no SAP code. A prebuilt binding's Linux rpath points at the build machine's SDK directory. On any other machine, set `LD_LIBRARY_PATH` (Linux), `DYLD_LIBRARY_PATH` (macOS) or `PATH` (Windows) as described above.
+A binding is N-API, so one build per platform and architecture serves every supported Node.js version. It links to the SDK libraries dynamically and contains no SAP code.
+
+`npm run prebuild:native` sets `SAP_RFC_LITE_PREBUILD=1` for `binding.gyp`, which then leaves out what would tie the binding to the build machine: the rpath to its SDK directory (Linux, macOS) and the absolute PDB path (Windows, `/PDBALTPATH:%_PDB%`). The record step refuses a binding that still holds the build machine's home directory or SDK path. Users find the SDK as described in [Runtime library loading](#runtime-library-loading). Check a Linux build with `readelf -d prebuilds/linux-x64/*.node`: no `RUNPATH` or `RPATH` line.
 
 **SNC on Apple Silicon (unverified).** A community report says the macOS Secure Login Client is still built for x86_64 only, and runs on Apple Silicon through Rosetta 2. If so, its SNC library cannot be loaded into an arm64 Node.js process, and SNC with the `darwin-arm64` binding will not work: it would need an x86_64 Node.js under Rosetta and a `darwin-x64` binding. Check with `lipo -archs` on the Secure Login Client's `libsapcrypto.dylib`.
 
