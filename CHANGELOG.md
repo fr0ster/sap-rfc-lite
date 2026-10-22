@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **The 7-day release age is dropped.** `.npmrc` no longer sets `min-release-age=7`. The age gate
+  conflicted with the gating `npm audit`: a security fix younger than the gate could not be
+  installed while the audit blocked CI (seen 2026-10-22 with markdown-it 14.3.3). The defences that
+  stay: `allowScripts` with `strict-allow-scripts=true` (no dependency install script runs),
+  lockfile hashes, `npm ci --ignore-scripts` in CI, and the gating `npm audit`. Dependabot's own
+  cooldown is unchanged.
+
 ## [0.3.2] - 2026-10-22
 
 ### Fixed
