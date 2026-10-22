@@ -78,7 +78,7 @@ The addon is linked against the SDK shared libraries (`libsapnwrfc`, `libsapucum
 |---|---|---|
 | Linux | the library search path: `LD_LIBRARY_PATH`, or the system's (`/etc/ld.so.conf.d`, then `ldconfig`) | an rpath to `$SAPNWRFC_HOME/lib` as it was at build time, then the library search path |
 | macOS | `DYLD_LIBRARY_PATH` | `DYLD_LIBRARY_PATH` |
-| Windows | `PATH` (must include `%SAPNWRFC_HOME%\lib`) | `PATH` |
+| Windows | the DLL search order: the binding's own directory, then `System32` and the Windows directory, then `PATH` (must include `%SAPNWRFC_HOME%\lib`) | the same |
 
 **A prebuilt binding carries no path of the machine it was built on**: no rpath (Linux, macOS), no absolute PDB path (Windows). So on Linux it always needs the SDK's `lib` directory on the library search path, wherever the SDK is installed:
 
@@ -89,6 +89,8 @@ echo "$SAPNWRFC_HOME/lib" | sudo tee /etc/ld.so.conf.d/nwrfcsdk.conf && sudo ldc
 ```
 
 **macOS: always set `DYLD_LIBRARY_PATH`.** The macOS SDK's own libraries carry `@loader_path/…` install names, so the addon looks for `libsapnwrfc.dylib` and `libsapucum.dylib` next to itself, not on the rpath. Point `DYLD_LIBRARY_PATH` at `$SAPNWRFC_HOME/lib`, or the addon does not load. This holds for a prebuilt binding and a locally compiled one alike.
+
+**Windows: SAP GUI's `sapnwrfc.dll` comes first.** SAP GUI for Windows installs its own `sapnwrfc.dll` into `C:\Windows\System32`, and Windows searches `System32` before `PATH`. On a machine with SAP GUI the addon therefore loads SAP GUI's library, not the SDK's in `%SAPNWRFC_HOME%\lib`, whatever `PATH` says. `where.exe sapnwrfc.dll` lists every copy, and `binding.bindingVersions.nwrfcsdk` shows which one was loaded: the NW RFC SDK 7.50 reports `major: 7500`, SAP GUI's library its kernel release (for example `major: 7, minor: 53`). To load the SDK's library instead, copy the DLLs of `%SAPNWRFC_HOME%\lib` (`sapnwrfc.dll`, `libsapucum.dll`, `icudt*.dll`, `icuin*.dll`, `icuuc*.dll`) next to the binding, into the directory `node-gyp-build` loads it from (`node_modules\@mcp-abap-adt\sap-rfc-lite\prebuilds\win32-x64\`, or `build\Release\` for a local build): Windows searches the binding's own directory first.
 
 **A binding compiled on Linux** (`npm run build:cpp`, see [Installation](#installation)) embeds an rpath to `$SAPNWRFC_HOME/lib`, so it finds the SDK libraries without extra settings as long as the SDK stays where it was at build time. Set the library search path when:
 
@@ -122,6 +124,8 @@ npm ci
 npm run prebuild:native        # -> prebuilds/<platform>-<arch>/*.node + BUILD.json
 git add prebuilds/<platform>-<arch>
 ```
+
+On Windows with SAP GUI installed, the record step loads SAP GUI's `sapnwrfc.dll` from `System32` (see [Runtime library loading](#runtime-library-loading)) and records its version. Copy the SDK's DLLs into `prebuilds\win32-x64\`, run `node scripts\prebuild-record.js` again, and delete them before committing: `BUILD.json` must name SDK `7500`.
 
 `BUILD.json` records what the binding was built from:
 
