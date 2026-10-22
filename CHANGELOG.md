@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`.gitattributes`**: text files are checked out with LF on every OS (`* text=auto eol=lf`), and
+  `.node`, `.dll`, `.lib`, `.pdb`, `.dylib`, `.so` files are binary. On Windows, Git's default
+  `core.autocrlf=true` checked the sources out with CRLF, and the pre-commit hook's
+  `npm run lint:check` failed on every file.
+- **README, "Runtime library loading"**: on Windows, SAP GUI's `sapnwrfc.dll` in `System32` is
+  found before the SDK's on `PATH`; how to tell which one was loaded (`bindingVersions`) and how
+  to load the SDK's (its DLLs next to the binding). The maintainers' section says how to record a
+  Windows prebuild's SDK version on a machine with SAP GUI.
+
 ### Removed
 
 - **Node.js 18 is no longer supported** (`engines: node >= 20`; CI runs Node.js 20 and 22). The

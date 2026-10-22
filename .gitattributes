@@ -1,0 +1,12 @@
+# Text files are stored and checked out with LF on every OS: Biome's
+# formatter expects LF, and Git for Windows would otherwise check them out
+# with CRLF (core.autocrlf=true), failing `npm run lint:check`.
+* text=auto eol=lf
+
+# Binaries are never converted.
+*.node binary
+*.dll binary
+*.lib binary
+*.pdb binary
+*.dylib binary
+*.so binary
