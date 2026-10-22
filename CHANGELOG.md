@@ -11,12 +11,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Documentation
 
-- **Windows with 64-bit SAP GUI needs no SDK.** SAP GUI installs its own `sapnwrfc.dll` into
-  `System32`, which Windows searches before `PATH`, and the addon works with it: measured with
+- **Windows with SAP GUI's 64-bit RFC library needs no SDK.** SAP GUI, when its RFC libraries
+  are installed, puts its own `sapnwrfc.dll` into `System32`, which Windows searches before `PATH`, and the addon works with it: measured with
   0.3.0's prebuilt `win32-x64` binding and SAP GUI's library 7.53 patch 1533 (logon,
   `STFC_CONNECTION`, close), with no SDK on the machine's `PATH`. README, "Prerequisites" and
-  "Runtime library loading", say when the SDK is needed: without SAP GUI, with 32-bit SAP GUI only,
-  on Linux and macOS, and in Docker images.
+  "Runtime library loading", say when the SDK is needed: on Windows with no 64-bit `sapnwrfc.dll` in
+  `System32` (`where.exe sapnwrfc.dll`), on Linux and macOS, and in Docker images.
 
 ## [0.3.0] - 2026-10-22
 
