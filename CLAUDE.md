@@ -78,7 +78,7 @@ Each Client instance has its own `std::mutex` — multiple clients run in parall
 
 - Consumers install with no install script: the package has none, and loads the prebuilt binding for `linux-x64` (glibc), `win32-x64` and `darwin-arm64` from `prebuilds/` at run time. On any other platform (and Linux with musl) the consumer builds it explicitly (README, "Installation").
 - Each prebuild is built on its own OS with the SDK (`npm run prebuild:native`); `scripts/prebuild-record.js` refuses a binding holding the home directory or the SDK path, and writes `BUILD.json` (target, binary, `sourceHash` of the C++ sources, SDK version). `prepublishOnly` runs `check:prebuilds`, so a stale or missing prebuild blocks a publish.
-- Dependencies' install scripts: `allowScripts` in `package.json` lists each one (all denied today), `.npmrc` sets `strict-allow-scripts=true` and `min-release-age=7`. CI and the release workflow run `npm audit --audit-level=moderate`.
+- Dependencies' install scripts: `allowScripts` in `package.json` lists each one (all denied today), `.npmrc` sets `strict-allow-scripts=true`. No `min-release-age`: it blocked installing a security fix while the gating audit failed CI. CI and the release workflow run `npm audit --audit-level=moderate`.
 
 ## Language Requirements
 
@@ -106,7 +106,7 @@ npm publishing is manual only, confirmed with a hardware security key (2FA). CI 
 4. After the workflow succeeds, build and publish locally:
    `npm run build:ts && npm pack --dry-run` (review the file list), then `npm publish --access public` and confirm with the security key; `prepublishOnly` refuses unless every prebuild is current (`check:prebuilds`).
 
-Dependency updates come from Dependabot (`.github/dependabot.yml`): weekly, with a 7-day cooldown for version updates. Security updates are opened immediately.
+Dependency updates come from Dependabot (`.github/dependabot.yml`): weekly, with Dependabot's own 7-day cooldown for version updates (it applies to Dependabot's pull requests only, not to npm installs). Security updates are opened immediately.
 
 ## Plans and Specs
 
