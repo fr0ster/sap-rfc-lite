@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-22
+
 ### Added
 
 - **`.gitattributes`**: text files are checked out with LF on every OS (`* text=auto eol=lf`), and
@@ -72,8 +74,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   keeps its rpath to the user's SDK, as before. Finding the SDK is unchanged for every user: the
   library search path (`LD_LIBRARY_PATH` or the system's on Linux, `DYLD_LIBRARY_PATH` on macOS,
   `PATH` on Windows); README, "Runtime library loading", now says which applies to which binding.
-  The `linux-x64` prebuild is rebuilt; `binding.gyp` changed, so `darwin-arm64` and `win32-x64`
-  must be rebuilt on their platforms before the release (`check:prebuilds` refuses until then).
+  All three prebuilds (`linux-x64`, `darwin-arm64`, `win32-x64`) are rebuilt this way, against
+  the NW RFC SDK 7.50 PL 18.
 
 ## [0.2.4] - 2026-10-16
 
@@ -230,6 +232,7 @@ published as `@mcp-abap-adt/sap-rfc-lite`, from the rename commit (`0703285`,
 after the tag); the
 unscoped `sap-rfc-lite` was unpublished the same day.
 
+[0.3.0]: https://github.com/fr0ster/sap-rfc-lite/compare/v0.2.4...v0.3.0
 [0.2.4]: https://github.com/fr0ster/sap-rfc-lite/compare/v0.2.3...v0.2.4
 [0.2.3]: https://github.com/fr0ster/sap-rfc-lite/compare/v0.2.2...v0.2.3
 [0.2.2]: https://github.com/fr0ster/sap-rfc-lite/compare/v0.2.1...v0.2.2
