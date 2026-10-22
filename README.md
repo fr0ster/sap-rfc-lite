@@ -53,14 +53,7 @@ npm install @mcp-abap-adt/sap-rfc-lite
 - C++ build tools (Visual Studio Build Tools on Windows, GCC/Clang on Linux/macOS);
 - the `SAPNWRFC_HOME` environment variable set to the SDK root directory (the folder containing `lib/` and `include/`).
 
-Either build it in the installed package, where `node-gyp-build` prefers it over any prebuilt binding:
-
-```bash
-cd node_modules/@mcp-abap-adt/sap-rfc-lite
-npm run build:cpp            # node-gyp rebuild -> build/Release/sapnwrfc.node
-```
-
-This build is lost when the package is reinstalled. To keep one, build a package for your platform from the repository instead, and install that:
+Build a package for your platform from the repository, and install that. The published package carries neither `binding.gyp` nor the C++ sources: npm adds an implicit `node-gyp rebuild` install script to any package that holds a `binding.gyp`, and `npm ci` does so even with `"gypfile": false`, so shipping one would make installs compile.
 
 ```bash
 git clone https://github.com/fr0ster/sap-rfc-lite.git && cd sap-rfc-lite
@@ -94,7 +87,7 @@ echo "$SAPNWRFC_HOME/lib" | sudo tee /etc/ld.so.conf.d/nwrfcsdk.conf && sudo ldc
 
 **Windows: SAP GUI's `sapnwrfc.dll` is enough.** SAP GUI for Windows, when its RFC libraries are installed, puts a 64-bit `sapnwrfc.dll` into `C:\Windows\System32`, and Windows searches `System32` before `PATH`. On such a machine the addon loads SAP GUI's library, with no SDK and nothing on `PATH`; with an SDK on `PATH` too, it still loads SAP GUI's. Measured with 0.3.0's prebuilt binding and SAP GUI's library 7.53 patch 1533: logon, `STFC_CONNECTION` and close work. `where.exe sapnwrfc.dll` lists every copy, and `binding.bindingVersions.nwrfcsdk` shows which one was loaded: the NW RFC SDK 7.50 reports `major: 7500`, SAP GUI's library its kernel release (for example `major: 7, minor: 53`). To load the SDK's library instead, copy the DLLs of `%SAPNWRFC_HOME%\lib` (`sapnwrfc.dll`, `libsapucum.dll`, `icudt*.dll`, `icuin*.dll`, `icuuc*.dll`) next to the binding, into the directory `node-gyp-build` loads it from (`node_modules\@mcp-abap-adt\sap-rfc-lite\prebuilds\win32-x64\`, or `build\Release\` for a local build): Windows searches the binding's own directory first.
 
-**A binding compiled on Linux** (`npm run build:cpp`, see [Installation](#installation)) embeds an rpath to `$SAPNWRFC_HOME/lib`, so it finds the SDK libraries without extra settings as long as the SDK stays where it was at build time. Set the library search path when:
+**A binding compiled on Linux** (`npm run build:cpp` in a clone of the repository) embeds an rpath to `$SAPNWRFC_HOME/lib`, so it finds the SDK libraries without extra settings as long as the SDK stays where it was at build time. Set the library search path when:
 
 - the SDK was moved, or the built addon is deployed to a machine where the SDK lives elsewhere;
 - Node.js ships its own glibc and does not search the system library directories (see below).

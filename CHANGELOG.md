@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.2] - 2026-10-22
+
+### Fixed
+
+- **`npm ci` no longer compiles the binding.** 0.3.1 still shipped `binding.gyp`, and `npm ci`
+  adds an implicit `node-gyp rebuild` install script to a package holding one even with
+  `"gypfile": false` (measured with npm 11.19.0: `npm install` ran nothing, `npm ci` from the same
+  lockfile compiled, and without the SDK failed; an optional dependency was then dropped). The
+  package now carries `lib/`, `prebuilds/`, `NOTICE` and `CHANGELOG.md` only: no `binding.gyp`, no
+  C++ or TypeScript sources, no `scripts/prebuild-source.js`. A source build runs from a clone of
+  the repository (README, "Installation"); building inside the installed package is no longer
+  possible. `test/package.test.ts` checks the packed file list.
+
 ## [0.3.1] - 2026-10-22
 
 ### Documentation
@@ -243,6 +256,7 @@ published as `@mcp-abap-adt/sap-rfc-lite`, from the rename commit (`0703285`,
 after the tag); the
 unscoped `sap-rfc-lite` was unpublished the same day.
 
+[0.3.2]: https://github.com/fr0ster/sap-rfc-lite/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/fr0ster/sap-rfc-lite/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/fr0ster/sap-rfc-lite/compare/v0.2.4...v0.3.0
 [0.2.4]: https://github.com/fr0ster/sap-rfc-lite/compare/v0.2.3...v0.2.4

@@ -6,13 +6,10 @@
   "main": "./lib/index.js",
   "types": "./lib/index.d.ts",
   "files": [
-    "binding.gyp",
-    "src",
     "lib",
     "prebuilds",
     "NOTICE",
-    "CHANGELOG.md",
-    "scripts/prebuild-source.js"
+    "CHANGELOG.md"
   ],
   "scripts": {
     "prebuild:ts": "node -e \"require('node:fs').rmSync('lib', { recursive: true, force: true })\"",
