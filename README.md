@@ -26,14 +26,14 @@ No other lightweight alternative exists in the Node.js ecosystem. The only other
 | Vulnerabilities (npm audit) | **0** | **24** |
 | Outdated packages | 1 (dev only: `@types/node`, kept on an older Node.js line on purpose) | 18 (including runtime) |
 | API | Promise-based Client (`open`, `call`, `resetServerContext`, `close`) | Client, Pool, Server, Throughput |
-| Node.js requirement | >= 18 | >= 18 |
+| Node.js requirement | >= 20 | >= 18 |
 | N-API version | 8 | 8 |
 
 This project focuses on what most users actually need — a clean, modern, Promise-based RFC client — without the baggage of unused features and vulnerable dependencies.
 
 ## Prerequisites
 
-- Node.js >= 18
+- Node.js >= 20
 - SAP NetWeaver RFC SDK installed. SAP does not allow redistributing it, so it is never part of this package.
 
 ## Installation

@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 
+- **Node.js 18 is no longer supported** (`engines: node >= 20`; CI runs Node.js 20 and 22). The
+  prebuilt bindings are N-API 8, so one binding per platform loads on every supported Node.js.
+
 - **The package has no install script.** `scripts/install.js` and the `install` hook are gone,
   and `"gypfile": false` stops npm from adding its implicit `node-gyp rebuild` in their place.
   Newer npm releases run a dependency's install script only when the consumer allows it
