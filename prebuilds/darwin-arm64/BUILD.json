@@ -1,12 +1,8 @@
 {
   "target": "darwin-arm64",
-  "binary": "@mcp-abap-adt+sap-rfc-lite.node",
+  "binary": "@mcp-abap-adt+sap-rfc-lite.glibc.node",
   "sourceHash": "ee50abb6ca5097f144befb9c0aa1b7d6a2c5361ff95a60e2ef24cd54d2399b98",
   "nodeAddonApi": "8.9.2",
-  "sdk": {
-    "major": 7500,
-    "minor": 0,
-    "patchLevel": 18
-  },
-  "builtAt": "2026-10-16"
+  "sdk": null,
+  "builtAt": "2026-10-22"
 }
