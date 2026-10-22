@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-10-22
+
+### Documentation
+
+- **Windows with 64-bit SAP GUI needs no SDK.** SAP GUI installs its own `sapnwrfc.dll` into
+  `System32`, which Windows searches before `PATH`, and the addon works with it: measured with
+  0.3.0's prebuilt `win32-x64` binding and SAP GUI's library 7.53 patch 1533 (logon,
+  `STFC_CONNECTION`, close), with no SDK on the machine's `PATH`. README, "Prerequisites" and
+  "Runtime library loading", say when the SDK is needed: without SAP GUI, with 32-bit SAP GUI only,
+  on Linux and macOS, and in Docker images.
+
 ## [0.3.0] - 2026-10-22
 
 ### Added
@@ -232,6 +243,7 @@ published as `@mcp-abap-adt/sap-rfc-lite`, from the rename commit (`0703285`,
 after the tag); the
 unscoped `sap-rfc-lite` was unpublished the same day.
 
+[0.3.1]: https://github.com/fr0ster/sap-rfc-lite/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/fr0ster/sap-rfc-lite/compare/v0.2.4...v0.3.0
 [0.2.4]: https://github.com/fr0ster/sap-rfc-lite/compare/v0.2.3...v0.2.4
 [0.2.3]: https://github.com/fr0ster/sap-rfc-lite/compare/v0.2.2...v0.2.3
