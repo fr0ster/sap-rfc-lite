@@ -15,6 +15,12 @@
         'napi_version': "<!(node -e \"process.stdout.write(String(require('./package.json').config.napi_version))\")",
         'package_version': "<!(node -e \"process.stdout.write(String(require('./package.json').version))\")",
         'node_abi_version': "<!(node -e \"process.stdout.write(String(process.versions.modules))\")",
+        # 1 when building a prebuilt binding to ship (scripts/prebuild-native.js sets
+        # SAP_RFC_LITE_PREBUILD=1), 0 for a build on the user's own machine. A prebuilt
+        # binding carries no path of the machine it was built on: no rpath to the
+        # builder's SDK directory (Linux, macOS), no absolute PDB path (Windows). It
+        # finds the SDK through the library search path of the machine it runs on.
+        'prebuild': "<!(node -e \"process.stdout.write(process.env.SAP_RFC_LITE_PREBUILD === '1' ? '1' : '0')\")",
         # libc++ in current Xcode SDKs rejects targets below macOS 11 (-Werror turns its
         # warning into a build failure); Node 22, our floor, needs 11 too.
         # node -e + stdout.write, not node -p: -p colours numbers under FORCE_COLOR.
@@ -129,9 +135,16 @@
                             'libraries': [
                                 '-lsapnwrfc',
                                 '-lsapucum',
-                                '-Wl,-rpath,<(nwrfcsdk_lib_dir)'
                             ],
                         },
+                        'conditions': [
+                            # A build on the user's machine finds its SDK where it was built.
+                            ['prebuild==0', {
+                                'link_settings': {
+                                    'libraries': ['-Wl,-rpath,<(nwrfcsdk_lib_dir)'],
+                                },
+                            }],
+                        ],
                         'xcode_settings': {
                             'CLANG_CXX_LANGUAGE_STANDARD': '<(cpp_standard)',
                             'CLANG_CXX_LIBRARY': 'libc++',
@@ -173,9 +186,16 @@
                             'libraries': [
                                 '-lsapnwrfc',
                                 '-lsapucum',
-                                '-Wl,-rpath,<(nwrfcsdk_lib_dir)'
                             ],
                         },
+                        'conditions': [
+                            # A build on the user's machine finds its SDK where it was built.
+                            ['prebuild==0', {
+                                'link_settings': {
+                                    'libraries': ['-Wl,-rpath,<(nwrfcsdk_lib_dir)'],
+                                },
+                            }],
+                        ],
                     },
                 ],
                 [
@@ -219,6 +239,16 @@
                                 'AdditionalDependencies': ['sapnwrfc.lib', 'libsapucum.lib'],
                             },
                         },
+                        'conditions': [
+                            # The debug directory names the PDB file only, not the builder's path.
+                            ['prebuild==1', {
+                                'msvs_settings': {
+                                    'VCLinkerTool': {
+                                        'AdditionalOptions': ['/PDBALTPATH:%_PDB%'],
+                                    },
+                                },
+                            }],
+                        ],
                     },
                 ],
             ],

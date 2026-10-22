@@ -7,15 +7,43 @@
  * against, read from the binding itself when it loads on this machine.
  */
 const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
 const { sourceHash } = require('./prebuild-source');
 
 const root = path.join(__dirname, '..');
 const target = `${process.platform}-${process.arch}`;
 const dir = path.join(root, 'prebuilds', target);
-const binary = fs.existsSync(dir) && fs.readdirSync(dir).find((f) => f.endsWith('.node'));
-if (!binary) {
+const bindings = fs.existsSync(dir) ? fs.readdirSync(dir).filter((f) => f.endsWith('.node')) : [];
+if (bindings.length === 0) {
   process.stderr.write(`sap-rfc-lite: no prebuilt binding in prebuilds/${target}; run prebuildify first.\n`);
+  process.exit(1);
+}
+// One binding per target: a second file (an old one left beside a new build
+// under another name) would ship unchecked.
+if (bindings.length > 1) {
+  process.stderr.write(
+    `sap-rfc-lite: prebuilds/${target} holds ${bindings.length} bindings (${bindings.join(', ')}); keep only the new one.\n`,
+  );
+  process.exit(1);
+}
+const binary = bindings[0];
+// A binding to ship holds no path of the machine it was built on (binding.gyp,
+// `prebuild`): neither the home directory (an rpath, a PDB path) nor the SDK
+// directory it was linked against.
+const bytes = fs.readFileSync(path.join(dir, binary));
+const sdkHome = process.env.SAPNWRFC_HOME || process.env.SAPNWRFC_HOME_CLOUD;
+const local = [os.homedir(), sdkHome && path.resolve(sdkHome)].filter(Boolean);
+const leaked = local.filter((p) =>
+  [p, p.split(path.sep).join('/')].some(
+    (form) => bytes.includes(Buffer.from(form, 'utf8')) || bytes.includes(Buffer.from(form, 'utf16le')),
+  ),
+);
+if (leaked.length) {
+  process.stderr.write(
+    `sap-rfc-lite: prebuilds/${target}/${binary} holds a path of this machine (${leaked.join(', ')}); ` +
+      'it was not built by `npm run prebuild:native`, or binding.gyp embeds the path again. Not recorded.\n',
+  );
   process.exit(1);
 }
 let sdk = null;

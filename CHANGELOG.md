@@ -7,6 +7,63 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed
+
+- **Node.js 18 is no longer supported** (`engines: node >= 20`; CI runs Node.js 20 and 22). The
+  prebuilt bindings are N-API 8, so one binding per platform loads on every supported Node.js.
+
+- **The package has no install script.** `scripts/install.js` and the `install` hook are gone,
+  and `"gypfile": false` stops npm from adding its implicit `node-gyp rebuild` in their place.
+  Newer npm releases run a dependency's install script only when the consumer allows it
+  (`allowScripts`), and an install script is the path supply-chain worms such as Shai-Hulud
+  spread through, so the package must work without one. It does: on a platform with a prebuilt
+  binding (`linux-x64` glibc, `win32-x64`, `darwin-arm64`), `node-gyp-build` loads it at run time,
+  as before; the hook only ever decided whether to compile. **On any other platform, and on Linux
+  with musl, installing no longer compiles the binding:** build it explicitly, in the installed
+  package (`npm run build:cpp`) or as a package of your own from the repository
+  (`npm run prebuild:native`, `npm pack`). README, "Installation", says how.
+
+### Security
+
+- **Dev dependencies: 21 advisories to 0** (`npm audit`, 1 critical `handlebars`, 20 moderate
+  through `sprintf-js`). Both came through Jest (`ts-jest` → `handlebars`;
+  `babel-plugin-istanbul` → `js-yaml` 3 → `argparse` → `sprintf-js`, which has no fixed release).
+  Jest, `ts-jest`, `ts-node` and `@types/jest` are replaced by Node.js's own test runner
+  (`node:test`; `npm test` compiles the tests with `tsc` and runs them), which also removes the
+  two install scripts Jest brought (`@parcel/watcher`, `unrs-resolver`) and the deprecated
+  `glob@10`: the lockfile holds 86 packages instead of 408. `@biomejs/biome` 2.5.15,
+  `typescript` 7 (the emitted `lib/` is byte-identical to TypeScript 5.9's).
+- **No dependency runs an install script.** `allowScripts` in `package.json` denies `esbuild`'s
+  `postinstall` (its binary comes from its platform package), and `.npmrc` sets
+  `strict-allow-scripts=true`, so a new dependency with an unreviewed install script fails the
+  install; it also sets `min-release-age=7`, matching Dependabot's cooldown.
+- **CI and the release workflow run `npm audit --audit-level=moderate`**, and call Biome and
+  `tsc` through npm scripts instead of `npx` (also in the husky pre-commit hook).
+
+### Fixed
+
+- **`bindingVersions.version` works inside a bundle.** `lib/binding.js` read `package.json`
+  through a path computed at run time (`path.resolve(__dirname, '..', 'package.json')`). A
+  bundler cannot inline that, and inside a bundle or a Node.js single-executable application,
+  where no `package.json` lies next to the code, loading the package threw, so no RFC call
+  worked. The read is now a literal `require('../package.json')`, which bundlers inline. The
+  reported version is still the package's, not the release a prebuilt binding was built for.
+  `test/bundle.test.ts` bundles the compiled binding with esbuild (new dev dependency) and runs
+  it where no `package.json` exists.
+- **Prebuilt bindings carry no path of the machine they were built on.** The Linux prebuild had
+  a `RUNPATH` to the builder's SDK directory under the builder's home, the macOS one an
+  `LC_RPATH` likewise, and the Windows one the builder's absolute PDB path. Those paths exist
+  nowhere else, so they found nothing for any user, and they leaked a home directory.
+  `npm run prebuild:native` (now `scripts/prebuild-native.js`) builds with
+  `SAP_RFC_LITE_PREBUILD=1`, for which `binding.gyp` adds no rpath (Linux, macOS) and links with
+  `/PDBALTPATH:%_PDB%` (Windows). `scripts/prebuild-record.js` refuses to record a binding that
+  holds the build machine's home directory or SDK path. A binding compiled on the user's machine
+  keeps its rpath to the user's SDK, as before. Finding the SDK is unchanged for every user: the
+  library search path (`LD_LIBRARY_PATH` or the system's on Linux, `DYLD_LIBRARY_PATH` on macOS,
+  `PATH` on Windows); README, "Runtime library loading", now says which applies to which binding.
+  The `linux-x64` prebuild is rebuilt; `binding.gyp` changed, so `darwin-arm64` and `win32-x64`
+  must be rebuilt on their platforms before the release (`check:prebuilds` refuses until then).
+
 ## [0.2.4] - 2026-10-16
 
 ### Fixed

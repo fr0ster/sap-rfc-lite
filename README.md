@@ -24,24 +24,17 @@ No other lightweight alternative exists in the Node.js ecosystem. The only other
 | Source code | ~2,200 lines | ~14,200 lines |
 | Runtime dependencies | 2 | 4 (includes bluebird, decimal.js) |
 | Vulnerabilities (npm audit) | **0** | **24** |
-| Outdated packages | 4 (dev only) | 18 (including runtime) |
+| Outdated packages | 1 (dev only: `@types/node`, kept on an older Node.js line on purpose) | 18 (including runtime) |
 | API | Promise-based Client (`open`, `call`, `resetServerContext`, `close`) | Client, Pool, Server, Throughput |
-| Node.js requirement | >= 18 | >= 18 |
+| Node.js requirement | >= 20 | >= 18 |
 | N-API version | 8 | 8 |
 
 This project focuses on what most users actually need — a clean, modern, Promise-based RFC client — without the baggage of unused features and vulnerable dependencies.
 
 ## Prerequisites
 
-- Node.js >= 18
+- Node.js >= 20
 - SAP NetWeaver RFC SDK installed. SAP does not allow redistributing it, so it is never part of this package.
-
-**On a platform with a prebuilt binding, nothing is compiled.** The package carries a prebuilt N-API binding for each platform listed in `prebuildTargets` in `package.json` (currently `linux-x64` with glibc, `win32-x64` and `darwin-arm64`; Linux with musl, such as Alpine, builds from source). There `npm install` uses it and needs no C++ toolchain and no `SAPNWRFC_HOME`. The SDK libraries only have to be loadable when the binding is loaded (see [Runtime library loading](#runtime-library-loading)).
-
-**Elsewhere, or with `npm install --build-from-source`, the binding is compiled at install.** That needs:
-
-- C++ build tools (Visual Studio Build Tools on Windows, GCC/Clang on Linux/macOS);
-- the `SAPNWRFC_HOME` environment variable set to the SDK root directory (the folder containing `lib/` and `include/`).
 
 ## Installation
 
@@ -49,29 +42,60 @@ This project focuses on what most users actually need — a clean, modern, Promi
 npm install @mcp-abap-adt/sap-rfc-lite
 ```
 
-The install step prints which way it took. `using the prebuilt binding for <platform>-<arch>` means nothing was compiled. When it compiles and the compile fails, npm drops an optional dependency silently, so check that line when the package is installed as one.
+**The package has no install script.** Nothing runs when it is installed: no compile, no download, no `node-gyp`. It works the same with `--ignore-scripts` and under an npm that runs no install script it has not been told to allow (`allowScripts`).
+
+**On a platform with a prebuilt binding, that is all.** The package carries a prebuilt N-API binding for each platform listed in `prebuildTargets` in `package.json`: currently `linux-x64` (glibc), `win32-x64` and `darwin-arm64`. `node-gyp-build` picks it when the package is loaded. No C++ toolchain and no `SAPNWRFC_HOME` are needed; the SDK libraries only have to be loadable at run time (see [Runtime library loading](#runtime-library-loading)).
+
+**Elsewhere, build the binding from source yourself.** That covers any other platform or architecture, and Linux with musl (Alpine and the like), where the glibc binding cannot load. Loading the package there fails with `No native build was found` (or, on a musl distribution other than Alpine, a load error of the glibc binding) until a binding is built. A source build needs:
+
+- C++ build tools (Visual Studio Build Tools on Windows, GCC/Clang on Linux/macOS);
+- the `SAPNWRFC_HOME` environment variable set to the SDK root directory (the folder containing `lib/` and `include/`).
+
+Either build it in the installed package, where `node-gyp-build` prefers it over any prebuilt binding:
+
+```bash
+cd node_modules/@mcp-abap-adt/sap-rfc-lite
+npm run build:cpp            # node-gyp rebuild -> build/Release/sapnwrfc.node
+```
+
+This build is lost when the package is reinstalled. To keep one, build a package for your platform from the repository instead, and install that:
+
+```bash
+git clone https://github.com/fr0ster/sap-rfc-lite.git && cd sap-rfc-lite
+git checkout v<version>      # the release you depend on
+npm ci
+npm run prebuild:native      # -> prebuilds/<platform>-<arch>/ (needs the SDK libraries loadable, see below)
+npm pack                     # -> mcp-abap-adt-sap-rfc-lite-<version>.tgz, to install in your project
+```
+
+A binding compiled on Linux embeds an rpath to `$SAPNWRFC_HOME/lib` (unless built by `prebuild:native`); see the next section.
 
 ## Runtime library loading
 
-The addon is linked against the SDK shared libraries (`libsapnwrfc`, `libsapucum`) and, on Linux, the system `libuuid`. The dynamic loader must find all of them when the addon is loaded.
+The addon is linked against the SDK shared libraries (`libsapnwrfc`, `libsapucum`) and, on Linux, the system `libuuid`. The dynamic loader must find all of them when the addon is loaded. The package does not load the SDK itself: it has no code that looks for the SDK or preloads it by path, and `SAPNWRFC_HOME` is read only when the binding is compiled. What finds the SDK at run time is the operating system's loader:
 
-**macOS: always set `DYLD_LIBRARY_PATH`.** The macOS SDK's own libraries carry `@loader_path/…` install names, so the built addon looks for `libsapnwrfc.dylib` and `libsapucum.dylib` next to itself, not on the rpath. Point `DYLD_LIBRARY_PATH` at `$SAPNWRFC_HOME/lib`, or the addon does not load. This holds for a prebuilt binding and a locally compiled one alike.
+| | Prebuilt binding | Binding compiled on your machine |
+|---|---|---|
+| Linux | the library search path: `LD_LIBRARY_PATH`, or the system's (`/etc/ld.so.conf.d`, then `ldconfig`) | an rpath to `$SAPNWRFC_HOME/lib` as it was at build time, then the library search path |
+| macOS | `DYLD_LIBRARY_PATH` | `DYLD_LIBRARY_PATH` |
+| Windows | `PATH` (must include `%SAPNWRFC_HOME%\lib`) | `PATH` |
 
-On Linux the build embeds an rpath to `$SAPNWRFC_HOME/lib`, so a locally compiled addon finds the SDK libraries without extra settings as long as the SDK stays where it was at build time. Set the library search path when:
-
-- the SDK was moved, or the built addon is deployed to a machine where the SDK lives elsewhere;
-- Node.js ships its own glibc and does not search the system library directories (for example, Node.js installed via Homebrew on Linux). Loading then fails with `ERR_DLOPEN_FAILED` and `libuuid.so.1: cannot open shared object file`.
-
-| OS | Variable |
-|---|---|
-| Linux | `LD_LIBRARY_PATH` |
-| macOS | `DYLD_LIBRARY_PATH` |
-| Windows | `PATH` (must include `%SAPNWRFC_HOME%\lib`) |
+**A prebuilt binding carries no path of the machine it was built on**: no rpath (Linux, macOS), no absolute PDB path (Windows). So on Linux it always needs the SDK's `lib` directory on the library search path, wherever the SDK is installed:
 
 ```bash
-# SDK moved or deployed elsewhere
 export LD_LIBRARY_PATH="$SAPNWRFC_HOME/lib:$LD_LIBRARY_PATH"
+# or, system-wide:
+echo "$SAPNWRFC_HOME/lib" | sudo tee /etc/ld.so.conf.d/nwrfcsdk.conf && sudo ldconfig
 ```
+
+**macOS: always set `DYLD_LIBRARY_PATH`.** The macOS SDK's own libraries carry `@loader_path/…` install names, so the addon looks for `libsapnwrfc.dylib` and `libsapucum.dylib` next to itself, not on the rpath. Point `DYLD_LIBRARY_PATH` at `$SAPNWRFC_HOME/lib`, or the addon does not load. This holds for a prebuilt binding and a locally compiled one alike.
+
+**A binding compiled on Linux** (`npm run build:cpp`, see [Installation](#installation)) embeds an rpath to `$SAPNWRFC_HOME/lib`, so it finds the SDK libraries without extra settings as long as the SDK stays where it was at build time. Set the library search path when:
+
+- the SDK was moved, or the built addon is deployed to a machine where the SDK lives elsewhere;
+- Node.js ships its own glibc and does not search the system library directories (see below).
+
+**Node.js with its own glibc** (for example, Node.js installed via Homebrew on Linux) does not search the system library directories, whichever binding is used. Loading then fails with `ERR_DLOPEN_FAILED` and `libuuid.so.1: cannot open shared object file`.
 
 For a Node.js with its own glibc, do **not** add the whole system library directory (`/lib/x86_64-linux-gnu`): the loader would then take the system glibc, which may be older than the one Node.js was built against (`GLIBC_2.38 not found`). Expose only the missing library instead:
 
@@ -81,7 +105,7 @@ ln -sf /lib/x86_64-linux-gnu/libuuid.so.1 ~/.local/lib/sap-rfc-lite/
 export LD_LIBRARY_PATH="$HOME/.local/lib/sap-rfc-lite:$SAPNWRFC_HOME/lib:$LD_LIBRARY_PATH"
 ```
 
-`binding.bindingVersions` reports the package version and the loaded SDK version, which is a quick check that the addon loads:
+`binding.bindingVersions` reports the package version and the loaded SDK version, which is a quick check that the addon loads. The package version is read from `package.json` through a literal path, so a bundler (esbuild, webpack, rollup) inlines it and a bundle or a Node.js single-executable application reports it too:
 
 ```bash
 node -e "console.log(require('@mcp-abap-adt/sap-rfc-lite').binding.bindingVersions)"
@@ -107,9 +131,22 @@ git add prebuilds/<platform>-<arch>
 
 `prepublishOnly` (`npm run check:prebuilds`) refuses to publish while a target in `prebuildTargets` has no binding, or has one built from other C++ sources. A change to the C++ sources, `binding.gyp` or `node-addon-api` therefore means rebuilding every target. A new SDK release is a reason to rebuild by hand.
 
-A binding is N-API, so one build per platform and architecture serves every supported Node.js version. It links to the SDK libraries dynamically and contains no SAP code. A prebuilt binding's Linux rpath points at the build machine's SDK directory. On any other machine, set `LD_LIBRARY_PATH` (Linux), `DYLD_LIBRARY_PATH` (macOS) or `PATH` (Windows) as described above.
+A binding is N-API, so one build per platform and architecture serves every supported Node.js version. It links to the SDK libraries dynamically and contains no SAP code.
+
+`npm run prebuild:native` sets `SAP_RFC_LITE_PREBUILD=1` for `binding.gyp`, which then leaves out what would tie the binding to the build machine: the rpath to its SDK directory (Linux, macOS) and the absolute PDB path (Windows, `/PDBALTPATH:%_PDB%`). The record step refuses a binding that still holds the build machine's home directory or SDK path. Users find the SDK as described in [Runtime library loading](#runtime-library-loading). Check a Linux build with `readelf -d prebuilds/linux-x64/*.node`: no `RUNPATH` or `RPATH` line.
 
 **SNC on Apple Silicon (unverified).** A community report says the macOS Secure Login Client is still built for x86_64 only, and runs on Apple Silicon through Rosetta 2. If so, its SNC library cannot be loaded into an arm64 Node.js process, and SNC with the `darwin-arm64` binding will not work: it would need an x86_64 Node.js under Rosetta and a `darwin-x64` binding. Check with `lipo -archs` on the Secure Login Client's `libsapcrypto.dylib`.
+
+## Install scripts and dependencies (contributors)
+
+npm worms such as Shai-Hulud spread through dependency install scripts (`preinstall`, `install`, `postinstall`) that steal npm and GitHub tokens. The repository keeps that surface small and closed:
+
+- **No dependency runs an install script.** `allowScripts` in `package.json` lists every dependency that has one, and allows none: `esbuild` (`false`) gets its binary from its platform package (`@esbuild/<platform>-<arch>`, an optional dependency), so its `postinstall` is not needed. The repository's `.npmrc` sets `strict-allow-scripts=true`, so with an npm that knows `allowScripts` (11.x), a new dependency with an install script fails `npm install` until it is reviewed and added there (`npm install-scripts approve <pkg>` or `npm install-scripts deny <pkg>`). An older npm ignores both settings; CI installs with `--ignore-scripts`.
+- **The repository's own `prepare` still runs** on `npm ci` / `npm install` (it installs the husky pre-commit hook). `ignore-scripts=true` is not set in `.npmrc`: it would also skip the `pre`/`post` scripts of `npm run`, among them `prepublishOnly` (the prebuild check) and `prepack`.
+- **Fresh releases wait.** `.npmrc` sets `min-release-age=7`: `npm install` resolves only versions published at least 7 days ago, as Dependabot's cooldown does.
+- **Few dependencies.** Tests run on Node.js's own runner (`node:test`, compiled by `tsc`), with no test framework installed.
+- **CI fails on a known advisory.** `npm audit --audit-level=moderate` runs in CI and in the release workflow, dev dependencies included.
+- **Tools run through npm scripts** (`npm run lint:check`, `npm run typecheck`), never `npx`, which fetches a package from the registry when it is not installed.
 
 ## Usage
 

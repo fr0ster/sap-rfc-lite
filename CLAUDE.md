@@ -9,12 +9,18 @@ Lightweight Node.js native addon (C++ / N-API) providing Promise-based bindings 
 ## Build & Test Commands
 
 ```bash
-npm install              # Install deps + compile C++ addon (node-gyp-build)
+npm ci                   # Install deps; compiles nothing (no install script, "gypfile": false)
 npm run build            # Full build: TypeScript then C++ rebuild
 npm run build:ts         # TypeScript only: src/ts/ → lib/
 npm run build:cpp        # C++ only: node-gyp rebuild → build/Release/sapnwrfc.node
-npm test                 # Jest with 60s timeout
+npm run prebuild:native  # This platform's prebuilt binding → prebuilds/<platform>-<arch>/ + BUILD.json
+npm run check:prebuilds  # Every target's binding present, one per target, built from these C++ sources
+npm run lint:check       # Biome, read-only
+npm run typecheck        # tsc --noEmit
+npm test                 # tsc -p tsconfig.test.json, then node:test (scripts/run-tests.js)
 ```
+
+Use npm scripts only, never `npx`.
 
 The `SAPNWRFC_HOME` env var must point to the NW RFC SDK root (containing `lib/` and `include/`).
 If the addon fails to load with `ERR_DLOPEN_FAILED`, see "Runtime library loading" in `README.md` (`LD_LIBRARY_PATH`).
@@ -31,7 +37,7 @@ src/ts/                      src/cpp/                               libsapnwrfc
 ### TypeScript layer (`src/ts/`)
 
 - **`client.ts`** — Public `Client` class. Wraps C++ callbacks into Promises. Validates inputs before calling native code.
-- **`binding.ts`** — Loads the compiled `.node` module via `node-gyp-build`. Provides detailed error context (platform, arch, SAPNWRFC_HOME) on load failure.
+- **`binding.ts`** — Loads the `.node` module via `node-gyp-build`: a local `build/Release` build first, else the prebuilt binding in `prebuilds/<platform>-<arch>/`. Provides detailed error context (platform, arch, SAPNWRFC_HOME) on load failure.
 - **`types.ts`** — RFC data types (`RfcVariable`, `RfcStructure`, `RfcTable`, `RfcObject`), error types (`RfcLibError`, `AbapError`, `NodeRfcError`), connection params, version info.
 - **`index.ts`** — Re-exports `Client`, `binding`, and all types.
 
@@ -64,9 +70,15 @@ Each Client instance has its own `std::mutex` — multiple clients run in parall
 
 - C++17, N-API v8, `NAPI_CPP_EXCEPTIONS` enabled
 - SDK location: `SAPNWRFC_HOME` or `SAPNWRFC_HOME_CLOUD` env var
-- Platform conditions for Windows (MSVC/LTCG), Linux (GCC, rpath), macOS (Clang, libc++)
+- Platform conditions for Windows (MSVC/LTCG), Linux (GCC, rpath), macOS (Clang, libc++); with `SAP_RFC_LITE_PREBUILD=1` (set by `prebuild:native`) no rpath (Linux/macOS) and `/PDBALTPATH:%_PDB%` (Windows), so a prebuilt binding carries no path of the build machine
 - Required defines: `SAPwithUNICODE`, `SAPwithTHREADS`
 - Links: `sapnwrfc.lib` + `libsapucum.lib` (Windows), `-lsapnwrfc -lsapucum` (Unix)
+
+### Prebuilt bindings and install scripts
+
+- Consumers install with no install script: the package has none, and loads the prebuilt binding for `linux-x64` (glibc), `win32-x64` and `darwin-arm64` from `prebuilds/` at run time. On any other platform (and Linux with musl) the consumer builds it explicitly (README, "Installation").
+- Each prebuild is built on its own OS with the SDK (`npm run prebuild:native`); `scripts/prebuild-record.js` refuses a binding holding the home directory or the SDK path, and writes `BUILD.json` (target, binary, `sourceHash` of the C++ sources, SDK version). `prepublishOnly` runs `check:prebuilds`, so a stale or missing prebuild blocks a publish.
+- Dependencies' install scripts: `allowScripts` in `package.json` lists each one (all denied today), `.npmrc` sets `strict-allow-scripts=true` and `min-release-age=7`. CI and the release workflow run `npm audit --audit-level=moderate`.
 
 ## Language Requirements
 
@@ -78,6 +90,7 @@ Each Client instance has its own `std::mutex` — multiple clients run in parall
 - Output dir for TypeScript: `lib/` (ES2020, CommonJS, declarations enabled)
 - Output dir for C++: `build/Release/sapnwrfc.node`
 - Integration tests require a live SAP system with connection env files (`.env`)
+- Node.js >= 20 (`engines`); CI runs Node.js 20 and 22
 - Version in `package.json` — do not change without explicit request
 - Conventional Commits for git messages (`feat:`, `fix:`, `test:`, `chore:`)
 
@@ -91,7 +104,7 @@ npm publishing is manual only, confirmed with a hardware security key (2FA). CI 
    - `check`: tag must equal `package.json` version, then lint, typecheck, tests;
    - `github-release`: GitHub Release with generated notes.
 4. After the workflow succeeds, build and publish locally:
-   `npm run build:ts && npm pack --dry-run` (review the file list), then `npm publish --access public` and confirm with the security key.
+   `npm run build:ts && npm pack --dry-run` (review the file list), then `npm publish --access public` and confirm with the security key; `prepublishOnly` refuses unless every prebuild is current (`check:prebuilds`).
 
 Dependency updates come from Dependabot (`.github/dependabot.yml`): weekly, with a 7-day cooldown for version updates. Security updates are opened immediately.
 

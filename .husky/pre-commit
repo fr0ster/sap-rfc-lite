@@ -1,1 +1,1 @@
-npx biome check src --diagnostic-level=error
+npm run lint:check
