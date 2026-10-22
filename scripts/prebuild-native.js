@@ -7,8 +7,8 @@
  *
  * SAP_RFC_LITE_PREBUILD=1 tells binding.gyp the binding is to be shipped, so
  * it carries no path of this machine: no rpath to this machine's SDK
- * directory, no absolute PDB path. A build on the user's own machine (install,
- * `node-gyp rebuild`) keeps its rpath to the user's SDK, as before.
+ * directory, no absolute PDB path. A build on the user's own machine (`npm run
+ * build:cpp`, i.e. `node-gyp rebuild`) keeps its rpath to the user's SDK, as before.
  * prebuild-record.js refuses a binding that still holds this machine's home
  * directory or SDK path.
  */

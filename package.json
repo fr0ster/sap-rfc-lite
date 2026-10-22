@@ -12,19 +12,18 @@
     "prebuilds",
     "NOTICE",
     "CHANGELOG.md",
-    "scripts/install.js",
     "scripts/prebuild-source.js"
   ],
   "scripts": {
-    "install": "node scripts/install.js",
     "prebuild:ts": "node -e \"require('node:fs').rmSync('lib', { recursive: true, force: true })\"",
     "build:ts": "tsc",
     "build:cpp": "node-gyp rebuild",
     "build": "npm run build:ts && npm run build:cpp",
-    "lint": "npx biome check --write src",
-    "lint:check": "npx biome check src",
-    "format": "npx biome format --write src",
-    "test": "jest --testTimeout 60000",
+    "lint": "biome check --write src",
+    "lint:check": "biome check src",
+    "typecheck": "tsc --noEmit",
+    "format": "biome format --write src",
+    "test": "node scripts/run-tests.js",
     "prepare": "husky",
     "prepack": "npm run build:ts",
     "prebuild:native": "node scripts/prebuild-native.js",
@@ -39,24 +38,23 @@
     "node-gyp-build": "^4.6.0"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.5.14",
-    "@types/jest": "^30.0.0",
-    "@types/node": "^20.0.0",
+    "@biomejs/biome": "^2.5.15",
+    "@types/node": "^20.19.43",
     "esbuild": "^0.28.2",
     "husky": "^9.1.7",
-    "jest": "^30.5.1",
     "prebuildify": "^6.0.1",
-    "ts-jest": "^29.0.0",
-    "ts-node": "^10.9.2",
-    "typescript": "^5.0.0"
+    "typescript": "^7.0.2"
   },
   "engines": {
     "node": ">=18"
   },
-  "gypfile": true,
+  "gypfile": false,
   "prebuildTargets": [
     "linux-x64",
     "win32-x64",
     "darwin-arm64"
-  ]
+  ],
+  "allowScripts": {
+    "esbuild": false
+  }
 }

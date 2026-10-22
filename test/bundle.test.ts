@@ -11,14 +11,18 @@
 // directory holding no package.json, with node-gyp-build replaced by a stub
 // (no native addon, no SDK needed).
 
+import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { afterEach, beforeEach, it } from 'node:test';
 import { buildSync } from 'esbuild';
-import ts from 'typescript';
 
-const root = path.join(__dirname, '..');
+// Compiled by `npm test` (tsc -p tsconfig.test.json, the package's own
+// compiler options) to .test-build/test/; the repository root is two up.
+const root = path.join(__dirname, '..', '..');
+const compiled = path.join(__dirname, '..', 'src', 'ts', 'binding.js');
 const pkg = JSON.parse(
   fs.readFileSync(path.join(root, 'package.json'), 'utf8'),
 ) as { version: string };
@@ -34,30 +38,15 @@ afterEach(() => {
 });
 
 function compileBinding(packageDir: string): string {
-  // The package's layout: <package>/lib/binding.js beside <package>/package.json.
-  const config = ts.readConfigFile(
-    path.join(root, 'tsconfig.json'),
-    ts.sys.readFile,
-  );
-  const { options } = ts.parseJsonConfigFileContent(
-    config.config,
-    ts.sys,
-    root,
-  );
-  const source = fs.readFileSync(
-    path.join(root, 'src', 'ts', 'binding.ts'),
-    'utf8',
-  );
-  const { outputText } = ts.transpileModule(source, {
-    compilerOptions: options,
-  });
+  // The package's layout: <package>/lib/binding.js beside <package>/package.json,
+  // lib/binding.js being what tsc emits for src/ts/binding.ts.
   fs.mkdirSync(path.join(packageDir, 'lib'), { recursive: true });
   fs.copyFileSync(
     path.join(root, 'package.json'),
     path.join(packageDir, 'package.json'),
   );
   const entry = path.join(packageDir, 'lib', 'binding.js');
-  fs.writeFileSync(entry, outputText);
+  fs.copyFileSync(compiled, entry);
   return entry;
 }
 
@@ -95,9 +84,9 @@ it('bundles lib/binding.js with the package version inlined', () => {
     ],
     { cwd: run, encoding: 'utf8' },
   );
-  expect(child.stderr).toBe('');
-  expect(child.status).toBe(0);
-  expect(JSON.parse(child.stdout)).toEqual({
+  assert.equal(child.stderr, '');
+  assert.equal(child.status, 0);
+  assert.deepEqual(JSON.parse(child.stdout), {
     version: pkg.version,
     nwrfcsdk: { major: 7500, minor: 0, patchLevel: 0 },
   });

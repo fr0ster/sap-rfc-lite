@@ -4,9 +4,10 @@
 /*
  * Before publishing: every target in package.json `prebuildTargets` must have
  * its prebuilt binding under prebuilds/<platform>-<arch>/, built from the
- * current C++ sources (BUILD.json's sourceHash, see prebuild-source.js). A
- * package published without one would compile on that platform again; one
- * built from older sources would ship a binding that is not this code.
+ * current C++ sources (BUILD.json's sourceHash, see prebuild-source.js). The
+ * package has no install script, so a package published without one would not
+ * load on that platform until the user built it from source; one built from
+ * older sources would ship a binding that is not this code.
  */
 const fs = require('node:fs');
 const path = require('node:path');
