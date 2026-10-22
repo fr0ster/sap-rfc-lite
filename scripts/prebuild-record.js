@@ -14,11 +14,20 @@ const { sourceHash } = require('./prebuild-source');
 const root = path.join(__dirname, '..');
 const target = `${process.platform}-${process.arch}`;
 const dir = path.join(root, 'prebuilds', target);
-const binary = fs.existsSync(dir) && fs.readdirSync(dir).find((f) => f.endsWith('.node'));
-if (!binary) {
+const bindings = fs.existsSync(dir) ? fs.readdirSync(dir).filter((f) => f.endsWith('.node')) : [];
+if (bindings.length === 0) {
   process.stderr.write(`sap-rfc-lite: no prebuilt binding in prebuilds/${target}; run prebuildify first.\n`);
   process.exit(1);
 }
+// One binding per target: a second file (an old one left beside a new build
+// under another name) would ship unchecked.
+if (bindings.length > 1) {
+  process.stderr.write(
+    `sap-rfc-lite: prebuilds/${target} holds ${bindings.length} bindings (${bindings.join(', ')}); keep only the new one.\n`,
+  );
+  process.exit(1);
+}
+const binary = bindings[0];
 // A binding to ship holds no path of the machine it was built on (binding.gyp,
 // `prebuild`): neither the home directory (an rpath, a PDB path) nor the SDK
 // directory it was linked against.

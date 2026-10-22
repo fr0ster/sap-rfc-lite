@@ -18,8 +18,9 @@ const current = sourceHash().sourceHash;
 const problems = [];
 for (const target of targets) {
   const dir = path.join(root, 'prebuilds', target);
-  const binary = fs.existsSync(dir) && fs.readdirSync(dir).some((f) => f.endsWith('.node'));
-  if (!binary) { problems.push(`${target}: no prebuilt binding`); continue; }
+  const bindings = fs.existsSync(dir) ? fs.readdirSync(dir).filter((f) => f.endsWith('.node')) : [];
+  if (bindings.length === 0) { problems.push(`${target}: no prebuilt binding`); continue; }
+  if (bindings.length > 1) { problems.push(`${target}: ${bindings.length} bindings (${bindings.join(', ')}), one expected`); continue; }
   let info = null;
   try { info = JSON.parse(fs.readFileSync(path.join(dir, 'BUILD.json'), 'utf8')); } catch (_) { /* reported below */ }
   if (!info) { problems.push(`${target}: no BUILD.json`); continue; }

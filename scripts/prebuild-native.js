@@ -23,5 +23,8 @@ function run(args) {
   if (result.status !== 0) process.exit(result.status === null ? 1 : result.status);
 }
 
-run([require.resolve('prebuildify/bin.js'), '--napi', '--strip', '--tag-libc']);
+// The libc tag only means something on Linux: prebuildify 6 tags `glibc` on any
+// OS when asked, and a darwin or win32 binding must keep its plain name.
+const tags = process.platform === 'linux' ? ['--tag-libc'] : [];
+run([require.resolve('prebuildify/bin.js'), '--napi', '--strip', ...tags]);
 run([path.join(__dirname, 'prebuild-record.js')]);
