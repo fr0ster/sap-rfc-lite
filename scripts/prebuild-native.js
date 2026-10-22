@@ -17,6 +17,16 @@ const { spawnSync } = require('node:child_process');
 
 const root = path.join(__dirname, '..');
 const env = { ...process.env, SAP_RFC_LITE_PREBUILD: '1' };
+// macOS strips DYLD_* from anything started through a protected program
+// (`npm run` goes through /bin/sh), so an exported DYLD_LIBRARY_PATH never
+// reaches the record step, and the SDK's libraries (install name
+// @loader_path/…) cannot be loaded to read their version. The children here
+// are started from node directly, so the variable set here reaches them.
+const sdkHome = process.env.SAPNWRFC_HOME || process.env.SAPNWRFC_HOME_CLOUD;
+if (process.platform === 'darwin' && sdkHome) {
+  const lib = path.join(sdkHome, 'lib');
+  env.DYLD_LIBRARY_PATH = env.DYLD_LIBRARY_PATH ? `${lib}:${env.DYLD_LIBRARY_PATH}` : lib;
+}
 
 function run(args) {
   const result = spawnSync(process.execPath, args, { cwd: root, stdio: 'inherit', env });
