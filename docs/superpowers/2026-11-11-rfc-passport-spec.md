@@ -5,7 +5,8 @@ Bound by `2026-11-11-rfc-passport-goal.md`. Release: 0.4.0.
 Every claim is tagged: **Measured** (run against a real on-premise system over RFC, or on
 this machine), **Code** (read in this repository at the commit the branch starts from),
 **SAP** (the NW RFC SDK header `sapnwrfc.h`), **Inference** (reasoned, not checked).
-Points still to be decided are marked **Open** and decided by the owner, not here.
+Where the behaviour depends on what the SDK does and that is not yet known, the spec says
+which measurement the plan makes first; it does not guess the answer.
 
 ## 1. What exists today
 
@@ -64,7 +65,9 @@ call(rfmName: string, rfmParams?: RfcObject, options?: RfcCallOptions): Promise<
   only when `options.passport` is given; a call without it passes no fourth argument, so the
   native path is the one it is today.
 - The passport's type is the compiler's: no `Buffer.isBuffer` check in TS. A value rule
-  that the type cannot state is checked before anything is sent (see 2.4).
+  that the type cannot state is checked before anything is sent (see 2.4); a call given a
+  passport while the passport manager could not be installed is refused before anything
+  is sent (see 3.1).
 - The bytes are copied when `call` is invoked (native, on the main thread): a caller that
   changes its `Buffer` afterwards changes nothing that is sent.
 
@@ -79,17 +82,21 @@ call(rfmName: string, rfmParams?: RfcObject, options?: RfcCallOptions): Promise<
   `connectionClosedError`), before anything is sent.
 - `open()` opens a new connection on the same client, as it does after `close()` (Code:
   `OpenAsync` writes the handle it gets).
-- `close()` on a client whose connection the library released: **Open** — today `close()`
-  on a closed client rejects with the closed-connection error (Code: `CloseAsync`).
+- `close()` on a client whose connection the library released behaves as today: it
+  rejects with the closed-connection error, `nodeRfcError` "… over closed connection:
+  close()" (Code: `CloseAsync`), and changes nothing.
 
-### 2.4 Value rules of the passport — Open
+### 2.4 Value rules of the passport
 
-- A passport longer than the buffer the SDK offers in the start callback cannot be sent.
-  The size is given only inside the callback (`eppBufferSize`), 512 bytes in every call
-  measured (Measured, SDK 7500 PL18, Linux); the SDK does not document it (SAP) and does
-  not document what a non-`RFC_OK` answer of the start callback does (SAP). How the library
-  treats an oversized passport is **Open**.
-- An empty `Buffer`: sent as no passport, or refused: **Open**.
+- **An empty `Buffer` is refused**: `call` rejects with a `TypeError` before anything is
+  sent (a value rule the type cannot state; checked in TS before `invoke`).
+- **No size check of the library's own.** The library does not compare the passport with a
+  size, and no size is written into the code. The passport goes to the SDK through the start
+  callback's contract — the buffer the SDK offers (`eppBufferSize`) and the length the
+  callback sets (`*eppLength`) — and whatever the SDK or the system then answers for that
+  call is returned as that call's error, as it came (see 3.2). The offered size is not
+  documented (SAP); it was 512 bytes in every call measured (Measured, SDK 7500 PL18,
+  Linux), and is recorded here only as an observation, not a limit.
 
 The ADT client's debuggee passport is 288 bytes (Code: adt-clients
 `runtime/debugger/passport.js`; Measured: sent and caught).
@@ -115,10 +122,11 @@ The ADT client's debuggee passport is 288 bytes (Code: adt-clients
 - `onClientCallEnd` reads nothing and returns `RFC_OK` (out of scope: the returned
   passport).
 - If the installation fails: SAP documents only that `errorInfo` is filled "in case the
-  handlers could not be installed"; no failure was observed (Measured: `RFC_OK`). What the
-  addon does then is **Open**: (a) the module loads, the failure is kept, and a call given a
-  passport rejects with that SDK error before anything is sent while calls without one are
-  unaffected; or (b) loading the module fails with that error.
+  handlers could not be installed"; no failure was observed (Measured: `RFC_OK`). The
+  module loads all the same and keeps the installer's `RFC_ERROR_INFO`. A call given a
+  passport is then refused with that SDK error (converted by `rfcSdkError`, as every SDK
+  error is) in `Client::Invoke`, before any worker is queued and before anything is sent.
+  A call without a passport, and every other operation, behaves as today.
 
 ### 3.2 The passport reaches its own call only
 
@@ -129,9 +137,18 @@ The ADT client's debuggee passport is 288 bytes (Code: adt-clients
   a pointer to its passport (or `nullptr` when none was given) and the connection handle;
   immediately after `RfcInvoke` returns — on every path — it sets both back to `nullptr`.
 - `onClientCallStart(handle, …, buffer, size, length)`: when the thread-local pointer is set
-  and `handle` equals the thread-local handle, it copies the passport into `buffer` and sets
-  `*length` to its size; otherwise it leaves `buffer` and `*length` as given (length 0, as
-  measured) and returns `RFC_OK`.
+  and `handle` equals the thread-local handle, it hands the passport to the SDK — copies it
+  into `buffer` and sets `*length` to its size; otherwise it leaves `buffer` and `*length`
+  as given (length 0, as measured) and returns `RFC_OK`.
+- **A passport that does not fit the offered buffer.** What the callback does when the
+  passport is longer than `size` is fixed by a measurement the plan makes first, before any
+  code is written, because SAP documents neither case: (1) what `RfcInvoke` answers, and
+  whether the call is sent, when the start callback returns a code other than `RFC_OK`;
+  (2) the same when it sets `*eppLength` above `size` without writing past the buffer. The
+  callback then follows the SDK's contract as measured — never writing past `buffer` — and
+  the library returns what the SDK or the system answers for that call as that call's
+  error, as it came. The spec adds no behaviour beyond that: no truncation chosen here, no
+  error of the library's own.
 - The callback runs synchronously on the thread that called `RfcInvoke`, with that call's
   handle (Measured: the handle matched on every call). The metadata calls the SDK makes
   inside `RfcGetFunctionDesc` (`RFC_GET_FUNCTION_INTERFACE`, `DDIF_FIELDINFO_GET`) also
@@ -147,9 +164,9 @@ The ADT client's debuggee passport is 288 bytes (Code: adt-clients
   the branches of `getOperationError` that answer the reopen's error. Nothing in the addon
   calls `RfcOpenConnection` except `OpenAsync`.
 - The set that ends the connection is the one that triggers the reconnect today (owner's
-  decision; Code: `Client.cc` lines 399–407 at the branch's start): codes
-  `RFC_COMMUNICATION_FAILURE`, `RFC_ABAP_RUNTIME_FAILURE`, `RFC_ABAP_MESSAGE`,
-  `RFC_EXTERNAL_FAILURE`; groups `ABAP_RUNTIME_FAILURE`, `LOGON_FAILURE`,
+  decision; Code: `Client.cc` lines 399–407 at the branch's start), plus `RFC_CLOSED`
+  (owner's decision): codes `RFC_COMMUNICATION_FAILURE`, `RFC_ABAP_RUNTIME_FAILURE`,
+  `RFC_ABAP_MESSAGE`, `RFC_EXTERNAL_FAILURE`, `RFC_CLOSED`; groups `ABAP_RUNTIME_FAILURE`, `LOGON_FAILURE`,
   `COMMUNICATION_FAILURE`, `EXTERNAL_RUNTIME_FAILURE`. One function,
   `endsConnection(const RFC_ERROR_INFO&)`, holds it.
 - It applies to every operation that uses an open handle on a worker thread:
@@ -167,9 +184,10 @@ The ADT client's debuggee passport is 288 bytes (Code: adt-clients
   `RFC_ERROR_INFO`.
 - This closes the leak of 1.: the old handle is no longer dropped without
   `RfcCloseConnection` (Code; that the SDK keeps memory for a dropped handle is Inference).
-- `RFC_CLOSED` ("Connection closed by the other side", SAP) is not in the set by code; its
-  group decides. Whether its group is `COMMUNICATION_FAILURE` is Inference, not measured —
-  closing a connection from the backend side (SM04, SMGW) is not done in these runs.
+- `RFC_CLOSED` ("Connection closed by the other side", SAP) is in the set by its code,
+  whatever its group. It is not provoked in the live runs: closing a connection from the
+  backend side (SM04, SMGW) is not done there; its place in the set is covered by a test
+  of `endsConnection` (6.2).
 
 ### 3.4 What stays
 
@@ -188,9 +206,12 @@ objects' shape: unchanged (Code). No timeout, retry or polling is added.
 ## 5. Documentation
 
 - **README**, "API": `client.call(rfmName, rfmParams?, options?)` with `options.passport`
-  (what it is for, that it is sent with that call only, that none is sent without it, the
-  size limit once decided); a new section "When a call ends the connection" with the table
-  of 4 and the set of codes and groups; `alive` described as false after such an error.
+  (what it is for, that it is sent with that call only, that none is sent without it, that an
+  empty one is refused, that the library sets no size limit and returns the SDK's or the
+  system's answer, and that a call with a passport is refused when the passport manager
+  could not be installed); a new section "When a call ends the connection" with the table
+  of 4 and the set of codes and groups, `RFC_CLOSED` included, and `close()` after it
+  rejecting as today; `alive` described as false after such an error.
 - **CHANGELOG** `[0.4.0]`: Added — the per-call passport; Changed (breaking) — no reconnect,
   the connection is closed on the errors of the set, the call's own error is always
   returned; Fixed — the handle dropped without close on reconnect; a "Migration from 0.3.x"
@@ -215,15 +236,22 @@ in their title elsewhere.
 - The TS layer with a fake native binding (the `Client` module given a stand-in for
   `binding.Client`): `call` without options passes three arguments to `invoke`; with
   `{ passport }` it passes `{ passport }` with the same `Buffer`; a rejection from the
-  native callback is the rejection of `call`, unchanged.
+  native callback is the rejection of `call`, unchanged; an empty `Buffer` rejects with a
+  `TypeError` and `invoke` is not called.
 - A type test (`*.typecheck.ts`, compiled by `npm run typecheck`, not run): `passport`
   accepts a `Buffer`; a string, a number or an unknown key is a compile error
   (`@ts-expect-error`).
 
 ### 6.2 Native (SDK present, no system; local, skipped in CI)
 
-- The addon loads with the passport manager installed (the binding's load succeeds; with
-  3.1 (a), the kept install result is `RFC_OK`).
+- The addon loads with the passport manager installed, and the kept install result is
+  `RFC_OK`.
+- `endsConnection` answers true for each code and group of the set — `RFC_CLOSED` among
+  them — and false for codes outside it (`RFC_ABAP_EXCEPTION`, `RFC_OK`); how a test
+  reaches it without widening the public surface is decided in the plan.
+- A refused install, if the plan finds a way to force one that does not ship: a call with a
+  passport rejects with the kept SDK error and sends nothing; a call without one is
+  unaffected.
 - A call on a client that was never opened, with and without a passport, answers the
   closed-connection error and sends nothing (Code path; no system needed).
 - Whether the close-on-error path can be driven without a system (a logon to a closed
@@ -259,6 +287,9 @@ closes every connection in a `finally`.
   the public API does not expose: how the test reads it (a test-only path, or the lock
   handle's `423` as the probe also did) is decided in the plan, without adding a public
   member.
+- **An oversized passport**: a passport longer than the buffer the SDK offered, handed
+  over as the plan's measurement (3.2) settled, rejects with the answer the SDK or the
+  system gave, as it came.
 - **Outside the set nothing closes**: `METHOD = '2'` → `RFC_ABAP_EXCEPTION`, `alive` stays
   `true`, the next call runs on the same conversation. (Measured.)
 
@@ -269,7 +300,8 @@ setting the thread-local after `RfcInvoke` instead of before (caught test red); 
 clearing it (only-its-own-call red); dropping the handle comparison in the callback (the
 parallel-clients case red, if the plan includes one); restoring the reopen (no-new-session
 red); returning success instead of the call's error (error-as-it-came red); leaving the
-handle set on an error of the set (`alive` red); TS passing options always (unit red).
+handle set on an error of the set (`alive` red); TS passing options always (unit red); letting an empty `Buffer` through (unit red);
+dropping `RFC_CLOSED` from the set (`endsConnection` test red).
 
 ## 7. Prebuilt bindings and release
 
