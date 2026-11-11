@@ -28,6 +28,7 @@ import {
   clearBreakpoints,
   createClass,
   deleteClass,
+  type ListenerAnswer,
   listen,
   loadLib,
   lockClass,
@@ -185,12 +186,13 @@ describe(title, { skip: !ready }, () => {
     assert.ok(typeof body === 'string' && body.includes(RUN_OUTPUT));
   }
 
-  /** A run nobody caught: it answered its output at once. */
-  async function uncaught(
-    caught: { debuggeeId?: string },
-    run: Promise<unknown>,
-  ) {
-    assert.equal(caught.debuggeeId, undefined, 'the listener caught nothing');
+  /**
+   * A run nobody caught: the listener's hold ended in the one form that means
+   * "nothing caught" (any other answer has already failed the reading), and
+   * the run answered its output.
+   */
+  async function uncaught(caught: ListenerAnswer, run: Promise<unknown>) {
+    assert.deepEqual(caught, { caught: false }, 'the listener caught nothing');
     const output = await run;
     assert.equal(read(output, 'status'), 200);
     const body = read(output, 'body');
@@ -208,7 +210,7 @@ describe(title, { skip: !ready }, () => {
         HOLD_CAUGHT,
         debuggeePassport(ids),
       );
-      assert.ok(caught.debuggeeId, 'the listener caught the run');
+      assert.ok(caught.caught, 'the listener caught the run');
       await finishCaught(caught.debuggeeId, run);
     } finally {
       await release(listener, ids);
@@ -263,7 +265,7 @@ describe(title, { skip: !ready }, () => {
         HOLD_CAUGHT,
         debuggeePassport(ids),
       );
-      assert.ok(first.caught.debuggeeId, 'the listener caught the first run');
+      assert.ok(first.caught.caught, 'the listener caught the first run');
       await finishCaught(first.caught.debuggeeId, first.run);
       await runner.resetServerContext();
       const next = await listenAndRun(listener, runner, ids, HOLD_EMPTY);
@@ -288,7 +290,7 @@ describe(title, { skip: !ready }, () => {
           thrown.message.includes('declares 289 bytes'),
       );
       await refused;
-      assert.equal((await heard).debuggeeId, undefined, 'nothing was caught');
+      assert.deepEqual(await heard, { caught: false }, 'nothing was caught');
       assert.equal(runner.alive, true);
     } finally {
       await release(listener, ids);

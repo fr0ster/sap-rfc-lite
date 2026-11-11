@@ -340,24 +340,49 @@ export async function clearBreakpoints(
 }
 
 /**
- * The listener's long poll: the server holds it `holdSeconds` and answers an
- * empty body, or a `DebuggeesList` naming the debuggee it caught.
+ * What a listener's long poll answered: nothing caught, or the debuggee it
+ * caught.
+ */
+export type ListenerAnswer =
+  | { caught: false }
+  | { caught: true; debuggeeId: string };
+
+/**
+ * Read a listener's answer. Two forms are known (measured on premise): a
+ * hold that ended with nothing caught answers 200 with an empty body, and a
+ * caught run answers 200 with a `DebuggeesList` naming its `DEBUGGEE_ID`.
+ * Anything else - another status, or a body naming no debuggee - is not
+ * "nothing caught": it throws, naming the status and the body's length (the
+ * body itself may carry the ids, so it is not printed).
+ */
+export function readListenerAnswer(answer: AdtAnswer): ListenerAnswer {
+  if (answer.status === 200 && answer.body === '') return { caught: false };
+  const debuggeeId =
+    answer.status === 200 ? tag(answer.body, 'DEBUGGEE_ID') : undefined;
+  if (debuggeeId !== undefined && debuggeeId !== '') {
+    return { caught: true, debuggeeId };
+  }
+  throw new Error(
+    `the listener answered neither "nothing caught" (200, empty body) nor a caught debuggee: status ${answer.status}, a body of ${answer.body.length} characters`,
+  );
+}
+
+/**
+ * The listener's long poll: the server holds it `holdSeconds` and answers
+ * what `readListenerAnswer` reads.
  */
 export async function listen(
   client: Client,
   ids: Terminal,
   holdSeconds: number,
-): Promise<{ debuggeeId?: string; status: number }> {
+): Promise<ListenerAnswer> {
   const answer = await adt(
     client,
     'POST',
     `${DEBUGGER}/listeners?${terminalQuery(ids, { timeout: String(holdSeconds) })}`,
     { headers: { Accept: 'application/vnd.sap.as+xml' } },
   );
-  const debuggeeId = tag(answer.body, 'DEBUGGEE_ID');
-  return debuggeeId === undefined
-    ? { status: answer.status }
-    : { status: answer.status, debuggeeId };
+  return readListenerAnswer(answer);
 }
 
 /** Release the listener (it also deletes the key's breakpoints). */
