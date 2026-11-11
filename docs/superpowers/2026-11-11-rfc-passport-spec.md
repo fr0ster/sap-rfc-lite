@@ -4,9 +4,9 @@ Bound by `2026-11-11-rfc-passport-goal.md`. Release: 0.4.0.
 
 Every claim is tagged: **Measured** (run against a real on-premise system over RFC, or on
 this machine), **Code** (read in this repository at the commit the branch starts from),
-**SAP** (the NW RFC SDK header `sapnwrfc.h`), **Inference** (reasoned, not checked).
-Where the behaviour depends on what the SDK does and that is not yet known, the spec says
-which measurement the plan makes first; it does not guess the answer.
+**SAP** (the NW RFC SDK header `sapnwrfc.h`, or SAP's own published code, named where
+used), **Inference** (reasoned, not checked). A point the owner has not decided yet is
+marked **pending the owner's decision** and is not decided here.
 
 ## 1. What exists today
 
@@ -90,13 +90,26 @@ call(rfmName: string, rfmParams?: RfcObject, options?: RfcCallOptions): Promise<
 
 - **An empty `Buffer` is refused**: `call` rejects with a `TypeError` before anything is
   sent (a value rule the type cannot state; checked in TS before `invoke`).
-- **No size check of the library's own.** The library does not compare the passport with a
-  size, and no size is written into the code. The passport goes to the SDK through the start
-  callback's contract — the buffer the SDK offers (`eppBufferSize`) and the length the
-  callback sets (`*eppLength`) — and whatever the SDK or the system then answers for that
-  call is returned as that call's error, as it came (see 3.2). The offered size is not
-  documented (SAP); it was 512 bytes in every call measured (Measured, SDK 7500 PL18,
-  Linux), and is recorded here only as an observation, not a limit.
+- **The passport describes itself, and the description must hold** (check 1, owner's
+  decision). Before anything is sent, `call` refuses with a `TypeError` — as it refuses an
+  empty `Buffer` — a passport that does not:
+  - start with the eye catcher `*TH*` (bytes `2A 54 48 2A`), and
+  - declare, in its bytes 5–6 read as an unsigned big-endian 16-bit integer, a length equal
+    to the `Buffer`'s length.
+  A `Buffer` shorter than 7 bytes cannot hold both and is refused by the same rule. The
+  check is plain byte reads in TS before `invoke`; nothing else of the passport is read.
+- **Where the declared length is.** SAP's own passport library, `@sap/e2e-trace` 6.0.0
+  (`lib/passport/field-descriptors.js`, `PASSPORT_LENGTH: { startsAt: 5, length: 2 }`,
+  written big-endian; `lib/passport/Passport.js` writes into it the length of the whole
+  passport it builds), places the passport's length at bytes 5–6 (SAP). The ADT client's
+  debuggee passport is 288 bytes and carries `0x0120` = 288 there (Code: adt-clients
+  `runtime/debugger/passport.js`).
+- **Why the check is the library's.** The system does not refuse a passport whose declared
+  length is wrong: a class run carrying the debuggee passport with the declared length set
+  to 289 or to 287 (288 bytes sent) answered `200` with its output and was not caught by the
+  terminal-mode listener for its ids, while the same passport with 288 declared was caught
+  (Measured). A wrong passport is ignored in silence; only a check before sending makes it
+  visible.
 
 The ADT client's debuggee passport is 288 bytes (Code: adt-clients
 `runtime/debugger/passport.js`; Measured: sent and caught).
@@ -140,15 +153,29 @@ The ADT client's debuggee passport is 288 bytes (Code: adt-clients
   and `handle` equals the thread-local handle, it hands the passport to the SDK — copies it
   into `buffer` and sets `*length` to its size; otherwise it leaves `buffer` and `*length`
   as given (length 0, as measured) and returns `RFC_OK`.
-- **A passport that does not fit the offered buffer.** What the callback does when the
-  passport is longer than `size` is fixed by a measurement the plan makes first, before any
-  code is written, because SAP documents neither case: (1) what `RfcInvoke` answers, and
-  whether the call is sent, when the start callback returns a code other than `RFC_OK`;
-  (2) the same when it sets `*eppLength` above `size` without writing past the buffer. The
-  callback then follows the SDK's contract as measured — never writing past `buffer` — and
-  the library returns what the SDK or the system answers for that call as that call's
-  error, as it came. The spec adds no behaviour beyond that: no truncation chosen here, no
-  error of the library's own.
+- **The passport against the offered buffer** (check 2, owner's decision). In the start
+  callback the passport's length is compared with `eppBufferSize`, the buffer the SDK offers
+  for that call. A passport that fits is placed as above. One that does not is not placed:
+  the callback writes nothing into `buffer` and leaves `*eppLength` as given (0).
+- **What the SDK does with the callback's answers** (Measured, SDK 7500 PL18, Linux; SAP
+  documents none of it):
+  - the start callback's return code is ignored: returning `RFC_EXTERNAL_FAILURE` with no
+    passport placed, `RfcInvoke` answered `RFC_OK` and the call ran on the system (an ADT
+    lock taken by it was held: a second connection's lock was refused `403`); with the
+    passport placed and `RFC_EXTERNAL_FAILURE` returned, the call ran and the run was
+    caught — the passport went;
+  - `*eppLength` set above `eppBufferSize` (513 with 512 offered, nothing written) did not
+    stop the call either: `RfcInvoke` answered `RFC_OK`, the call ran (lock held), the run
+    was not caught, and the end callback reported a 513-byte passport without the eye
+    catcher — what the SDK sent is not a passport, and whether it read past the buffer is
+    not known (Inference: it may have);
+  - so the callback has no way to make the SDK refuse a call, and setting a length above the
+    buffer is never done.
+- **What a call answers when its passport did not fit: pending the owner's decision.** The
+  measurement shows the call runs on the system without the passport, whatever the callback
+  answers; the SDK returns no error, and the system none either. Whether `call` then
+  answers the call's result as it came, or an error of the library's after the call ran,
+  is not decided in this spec.
 - The callback runs synchronously on the thread that called `RfcInvoke`, with that call's
   handle (Measured: the handle matched on every call). The metadata calls the SDK makes
   inside `RfcGetFunctionDesc` (`RFC_GET_FUNCTION_INTERFACE`, `DDIF_FIELDINFO_GET`) also
@@ -207,8 +234,8 @@ objects' shape: unchanged (Code). No timeout, retry or polling is added.
 
 - **README**, "API": `client.call(rfmName, rfmParams?, options?)` with `options.passport`
   (what it is for, that it is sent with that call only, that none is sent without it, that an
-  empty one is refused, that the library sets no size limit and returns the SDK's or the
-  system's answer, and that a call with a passport is refused when the passport manager
+  empty one, one without `*TH*` and one whose declared length differs from its length are
+  refused, that one larger than the buffer the SDK offers is not placed, and that a call with a passport is refused when the passport manager
   could not be installed); a new section "When a call ends the connection" with the table
   of 4 and the set of codes and groups, `RFC_CLOSED` included, and `close()` after it
   rejecting as today; `alive` described as false after such an error.
@@ -237,7 +264,9 @@ in their title elsewhere.
   `binding.Client`): `call` without options passes three arguments to `invoke`; with
   `{ passport }` it passes `{ passport }` with the same `Buffer`; a rejection from the
   native callback is the rejection of `call`, unchanged; an empty `Buffer` rejects with a
-  `TypeError` and `invoke` is not called.
+  `TypeError` and `invoke` is not called; so do a passport without the leading `*TH*`, one
+  whose declared length is one more and one less than its length, and one of 6 bytes; the
+  ADT client's 288-byte debuggee passport passes and reaches `invoke` unchanged.
 - A type test (`*.typecheck.ts`, compiled by `npm run typecheck`, not run): `passport`
   accepts a `Buffer`; a string, a number or an unknown key is a compile error
   (`@ts-expect-error`).
@@ -287,9 +316,12 @@ closes every connection in a `finally`.
   the public API does not expose: how the test reads it (a test-only path, or the lock
   handle's `423` as the probe also did) is decided in the plan, without adding a public
   member.
-- **An oversized passport**: a passport longer than the buffer the SDK offered, handed
-  over as the plan's measurement (3.2) settled, rejects with the answer the SDK or the
-  system gave, as it came.
+- **A passport the system would ignore is refused first**: the debuggee passport with a
+  declared length of 289 rejects with the `TypeError` and sends nothing — the listener's
+  hold ends empty and no run took place.
+- **A passport larger than the offered buffer**: tested once the owner has decided what the
+  call answers (3.2); the case is built from a self-consistent passport longer than the
+  buffer the SDK offers.
 - **Outside the set nothing closes**: `METHOD = '2'` → `RFC_ABAP_EXCEPTION`, `alive` stays
   `true`, the next call runs on the same conversation. (Measured.)
 
@@ -301,7 +333,10 @@ clearing it (only-its-own-call red); dropping the handle comparison in the callb
 parallel-clients case red, if the plan includes one); restoring the reopen (no-new-session
 red); returning success instead of the call's error (error-as-it-came red); leaving the
 handle set on an error of the set (`alive` red); TS passing options always (unit red); letting an empty `Buffer` through (unit red);
-dropping `RFC_CLOSED` from the set (`endsConnection` test red).
+dropping `RFC_CLOSED` from the set (`endsConnection` test red); dropping the eye-catcher
+comparison, and separately the declared-length comparison, of check 1 (each its own unit
+case red, the other cases still green); placing a passport larger than `eppBufferSize`
+(check 2's test red, once that test exists).
 
 ## 7. Prebuilt bindings and release
 
