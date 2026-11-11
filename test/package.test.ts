@@ -10,12 +10,17 @@
 
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
+import fs from 'node:fs';
 import path from 'node:path';
 import { it } from 'node:test';
 
 const root = path.join(__dirname, '..', '..');
 
-it('the packed file list holds no binding.gyp and no C++ sources', () => {
+interface PackResult {
+  files: { path: string }[];
+}
+
+function packedFiles(): string[] {
   const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
   const result = spawnSync(
     npm,
@@ -23,8 +28,13 @@ it('the packed file list holds no binding.gyp and no C++ sources', () => {
     { cwd: root, encoding: 'utf8', shell: process.platform === 'win32' },
   );
   assert.equal(result.status, 0, result.stderr);
-  const [packed] = JSON.parse(result.stdout) as [{ files: { path: string }[] }];
-  const files = packed.files.map((f) => f.path);
+  const [packed]: PackResult[] = JSON.parse(result.stdout);
+  assert.ok(packed);
+  return packed.files.map((f) => f.path);
+}
+
+it('the packed file list holds no binding.gyp and no C++ sources', () => {
+  const files = packedFiles();
   assert.ok(files.length > 0);
   assert.deepEqual(
     files.filter(
@@ -33,4 +43,26 @@ it('the packed file list holds no binding.gyp and no C++ sources', () => {
     [],
   );
   assert.ok(files.some((f) => f.startsWith('prebuilds/')));
+});
+
+// The test-only addon (test/native/: its binding.gyp, its shim, its build) is
+// never shipped.
+it('the packed file list holds nothing under test/', () => {
+  assert.deepEqual(
+    packedFiles().filter((f) => f.startsWith('test/')),
+    [],
+  );
+});
+
+it('prebuilds/ holds one binding per target', () => {
+  const pkg: { prebuildTargets: string[] } = JSON.parse(
+    fs.readFileSync(path.join(root, 'package.json'), 'utf8'),
+  );
+  const packed = packedFiles();
+  for (const target of pkg.prebuildTargets) {
+    const bindings = packed.filter(
+      (f) => f.startsWith(`prebuilds/${target}/`) && f.endsWith('.node'),
+    );
+    assert.equal(bindings.length, 1, target);
+  }
 });

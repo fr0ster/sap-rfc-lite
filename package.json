@@ -15,6 +15,7 @@
     "prebuild:ts": "node -e \"require('node:fs').rmSync('lib', { recursive: true, force: true })\"",
     "build:ts": "tsc",
     "build:cpp": "node-gyp rebuild",
+    "build:test-native": "node-gyp rebuild --directory=test/native",
     "build": "npm run build:ts && npm run build:cpp",
     "lint": "biome check --write src",
     "lint:check": "biome check src",
