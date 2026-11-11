@@ -2,7 +2,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { binding, type RfcClientBinding } from './binding';
-import type { RfcConnectionParameters, RfcObject } from './types';
+import type {
+  RfcCallOptions,
+  RfcConnectionParameters,
+  RfcObject,
+} from './types';
 
 export class Client {
   private __client: RfcClientBinding;
@@ -75,7 +79,15 @@ export class Client {
     });
   }
 
-  call(rfmName: string, rfmParams: RfcObject = {}): Promise<RfcObject> {
+  /**
+   * Invokes a remote function module. `options.passport`, when given, is sent
+   * with this call only; without it no passport is sent.
+   */
+  call(
+    rfmName: string,
+    rfmParams: RfcObject = {},
+    options: RfcCallOptions = {},
+  ): Promise<RfcObject> {
     return new Promise((resolve, reject) => {
       if (typeof rfmName !== 'string' || rfmName.length === 0) {
         reject(
@@ -83,18 +95,20 @@ export class Client {
         );
         return;
       }
+      const callback = (err: unknown, res: RfcObject) => {
+        if (err !== undefined && err !== null) {
+          reject(err);
+        } else {
+          resolve(res);
+        }
+      };
+      const { passport } = options;
       try {
-        this.__client.invoke(
-          rfmName,
-          rfmParams,
-          (err: unknown, res: RfcObject) => {
-            if (err !== undefined && err !== null) {
-              reject(err);
-            } else {
-              resolve(res);
-            }
-          },
-        );
+        if (passport === undefined) {
+          this.__client.invoke(rfmName, rfmParams, callback);
+        } else {
+          this.__client.invoke(rfmName, rfmParams, callback, { passport });
+        }
       } catch (ex) {
         reject(ex);
       }
