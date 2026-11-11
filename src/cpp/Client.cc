@@ -4,6 +4,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "Client.h"
+#include "connectionEnd.h"
 #include <mutex>
 #include <thread>
 #include <tuple>
@@ -12,29 +13,35 @@ namespace node_rfc {
 
 uint_t Client::_id = 1;
 
-ErrorPair connectionCheckErrorInit() {
-  RFC_ERROR_INFO errorInfo;
-  errorInfo.code = RFC_OK;
-  return ErrorPair(errorInfo, "");
-}
-
 Napi::Value Client::getOperationError(bool conn_closed,
                                       const char* operation,
-                                      ErrorPair connectionCheckError,
                                       RFC_ERROR_INFO* errorInfo,
                                       Napi::Env env) {
   Napi::EscapableHandleScope scope(env);
   Napi::Value error = Env().Undefined();
   if (conn_closed) {
     error = connectionClosedError(operation);
-  } else if (connectionCheckError.first.code != RFC_OK) {
-    error = rfcSdkError(&connectionCheckError.first);
-  } else if (connectionCheckError.second.length() > 0) {
-    error = nodeRfcError(connectionCheckError.second);
   } else if (errorInfo->code != RFC_OK) {
     error = rfcSdkError(errorInfo);
   }
   return scope.Escape(error);
+}
+
+// Called under the client's mutex, on the worker thread, right after an
+// operation on the open handle failed. On an error that leaves the connection
+// unusable (endsConnection) the handle is closed once and released: `alive`
+// turns false and every later operation answers the closed-connection error
+// until the caller opens the connection again. The library never opens one
+// itself. The close has its own error info, so the operation's error is what
+// is answered; its answer is ignored (after these errors the SDK answers
+// RFC_INVALID_HANDLE, measured, and SAP says it "can usually be ignored").
+void Client::releaseIfEnded(const RFC_ERROR_INFO& errorInfo) {
+  if (connectionHandle == nullptr || !endsConnection(errorInfo)) {
+    return;
+  }
+  RFC_ERROR_INFO closeErrorInfo;
+  RfcCloseConnection(connectionHandle, &closeErrorInfo);
+  connectionHandle = nullptr;
 }
 
 Napi::Object Client::Init(Napi::Env env, Napi::Object exports) {
@@ -201,6 +208,9 @@ class ResetServerContextAsync : public Napi::AsyncWorker {
     conn_closed = (client->connectionHandle == nullptr);
     if (!conn_closed) {
       RfcResetServerContext(client->connectionHandle, &errorInfo);
+      if (errorInfo.code != RFC_OK) {
+        client->releaseIfEnded(errorInfo);
+      }
     }
     client->UnlockMutex();
   }
@@ -241,7 +251,7 @@ class InvokeAsync : public Napi::AsyncWorker {
     if (!conn_closed) {
       RfcInvoke(client->connectionHandle, functionHandle, &errorInfo);
       if (errorInfo.code != RFC_OK) {
-        connectionCheckError = client->connectionCheck(&errorInfo);
+        client->releaseIfEnded(errorInfo);
       }
     }
   }
@@ -256,7 +266,6 @@ class InvokeAsync : public Napi::AsyncWorker {
     ValuePair result =
         ValuePair(client->getOperationError(conn_closed,
                                             closed_errmsg.c_str(),
-                                            connectionCheckError,
                                             &errorInfo,
                                             Env()),
                   Env().Undefined());
@@ -281,7 +290,6 @@ class InvokeAsync : public Napi::AsyncWorker {
   RFC_FUNCTION_DESC_HANDLE functionDescHandle;
   RFC_ERROR_INFO errorInfo;
   bool conn_closed = false;
-  ErrorPair connectionCheckError = connectionCheckErrorInit();
 };
 
 class PrepareAsync : public Napi::AsyncWorker {
@@ -306,6 +314,9 @@ class PrepareAsync : public Napi::AsyncWorker {
     if (!conn_closed) {
       functionDescHandle =
           RfcGetFunctionDesc(client->connectionHandle, funcName, &errorInfo);
+      if (errorInfo.code != RFC_OK) {
+        client->releaseIfEnded(errorInfo);
+      }
     }
   }
 
@@ -390,34 +401,6 @@ class PrepareAsync : public Napi::AsyncWorker {
   RFC_ERROR_INFO errorInfo;
   bool conn_closed = false;
 };
-
-ErrorPair Client::connectionCheck(RFC_ERROR_INFO* errorInfo) {
-  RFC_ERROR_INFO errorInfoOpen;
-
-  errorInfoOpen.code = RFC_OK;
-
-  if (
-      errorInfo->code == RFC_COMMUNICATION_FAILURE ||
-      errorInfo->code == RFC_ABAP_RUNTIME_FAILURE ||
-      errorInfo->code == RFC_ABAP_MESSAGE ||
-      errorInfo->code == RFC_EXTERNAL_FAILURE ||
-      errorInfo->group == ABAP_RUNTIME_FAILURE ||
-      errorInfo->group == LOGON_FAILURE ||
-      errorInfo->group == COMMUNICATION_FAILURE ||
-      errorInfo->group == EXTERNAL_RUNTIME_FAILURE)
-  {
-    RFC_CONNECTION_HANDLE new_handle;
-    this->connectionHandle = nullptr;
-    new_handle = RfcOpenConnection(client_params.connectionParams,
-                                   client_params.paramSize,
-                                   &errorInfoOpen);
-    if (errorInfoOpen.code == RFC_OK) {
-      this->connectionHandle = new_handle;
-    }
-  }
-
-  return ErrorPair(errorInfoOpen, "");
-}
 
 Napi::Value Client::Open(const Napi::CallbackInfo& info) {
   if (!info[0].IsFunction()) {

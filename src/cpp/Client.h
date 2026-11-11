@@ -31,10 +31,9 @@ class Client : public Napi::ObjectWrap<Client> {
   Napi::ObjectReference clientOptionsRef;
 
   Napi::Value connectionClosedError(const char* suffix);
-  ErrorPair connectionCheck(RFC_ERROR_INFO* errorInfo);
+  void releaseIfEnded(const RFC_ERROR_INFO& errorInfo);
   Napi::Value getOperationError(bool conn_closed,
                                 const char* operation,
-                                ErrorPair connectionCheckError,
                                 RFC_ERROR_INFO* errorInfo,
                                 Napi::Env env);
 

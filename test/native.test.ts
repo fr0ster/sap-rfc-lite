@@ -10,6 +10,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, it } from 'node:test';
+import { debuggeePassport } from './helpers/passport';
 
 /** What the shim (test/native/shim.cc) exposes. */
 interface TestAddon {
@@ -86,5 +87,44 @@ describe(title, { skip: !built }, () => {
         false,
       );
     });
+  });
+});
+
+// The shipped addon, built locally (`npm run build`), with no system: a client
+// that was never opened answers the closed-connection error before anything
+// is sent, with and without a passport.
+const shippedBuilt =
+  fs.existsSync(
+    path.join(__dirname, '..', '..', 'build', 'Release', 'sapnwrfc.node'),
+  ) && fs.existsSync(path.join(__dirname, '..', '..', 'lib', 'index.js'));
+const shippedTitle = shippedBuilt
+  ? 'the shipped addon without a system'
+  : 'the shipped addon without a system — skipped: not built (npm run build, needs the SDK)';
+
+describe(shippedTitle, { skip: !shippedBuilt }, () => {
+  function closedConnection(thrown: unknown): boolean {
+    const message =
+      typeof thrown === 'object' && thrown !== null
+        ? Reflect.get(thrown, 'message')
+        : undefined;
+    return (
+      typeof message === 'string' &&
+      message.startsWith(
+        'RFM client request over closed connection: invoke() STFC_CONNECTION',
+      )
+    );
+  }
+
+  it('a client never opened answers the closed-connection error, with and without a passport', async () => {
+    const lib: typeof import('../src/ts/index') = require(
+      path.join(__dirname, '..', '..', 'lib', 'index.js'),
+    );
+    const client = new lib.Client({ ashost: '127.0.0.1', sysnr: '00' });
+    assert.equal(client.alive, false);
+    await assert.rejects(client.call('STFC_CONNECTION'), closedConnection);
+    await assert.rejects(
+      client.call('STFC_CONNECTION', {}, { passport: debuggeePassport() }),
+      closedConnection,
+    );
   });
 });
