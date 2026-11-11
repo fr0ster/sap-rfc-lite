@@ -16,7 +16,8 @@ namespace node_rfc {
 // passport is copied into that call's workers and handed to the SDK through
 // thread-locals set immediately around RfcInvoke on the worker thread: the
 // start callback places it only for that thread's call and handle, and only
-// when it fits the buffer the SDK offers.
+// when it fits the buffer the SDK offers; every other request sends none. The
+// end callback keeps none of the passport the system returns.
 
 // Installs the passport manager; a second call does nothing.
 void installPassportManager();
@@ -37,6 +38,20 @@ bool placePassport(const unsigned char* passport,
                    SAP_RAW* buffer,
                    size_t bufferSize,
                    size_t* length);
+
+// The passport manager's client callbacks (RFC_PM_CALLBACK), named so that
+// the test addon can call them. Before a client request: the passport of this
+// thread's call, for its own handle only. After it: the returned passport.
+RFC_RC SAP_API passportOnClientCallStart(RFC_CONNECTION_HANDLE handle,
+                                         SAP_UC const* functionName,
+                                         SAP_RAW* buffer,
+                                         size_t bufferSize,
+                                         size_t* length);
+RFC_RC SAP_API passportOnClientCallEnd(RFC_CONNECTION_HANDLE handle,
+                                       SAP_UC const* functionName,
+                                       SAP_RAW* buffer,
+                                       size_t bufferSize,
+                                       size_t* length);
 
 // What became of a call's passport.
 struct PassportOutcome {

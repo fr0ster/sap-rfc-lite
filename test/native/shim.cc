@@ -9,6 +9,9 @@
 #include "nwrfcsdk.h"
 #include "passport.h"
 
+#include <string>
+#include <vector>
+
 namespace node_rfc {
 Napi::Env __env = nullptr;
 }  // namespace node_rfc
@@ -86,6 +89,49 @@ Napi::Value PlacePassport(const Napi::CallbackInfo& info) {
   return result;
 }
 
+// Two distinct stand-ins for connection handles; never dereferenced.
+int ownConnection = 0;
+int otherConnection = 0;
+
+// callbackView(which, passport, sameHandle, offered, lengthIn): what the
+// passport manager's callback `which` ('start' or 'end') leaves in a buffer of
+// `offered` + 16 bytes of 0xEE whose length the SDK offers as `lengthIn`. For
+// 'start', `passport` (a Buffer, or null for a call given none) is set as the
+// call's passport on the own handle, and the callback is called on the own
+// handle or on another one.
+Napi::Value CallbackView(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  std::string which = info[0].As<Napi::String>().Utf8Value();
+  bool given = info[1].IsBuffer();
+  std::vector<unsigned char> passport;
+  if (given) {
+    Napi::Buffer<unsigned char> bytes = info[1].As<Napi::Buffer<unsigned char>>();
+    passport.assign(bytes.Data(), bytes.Data() + bytes.Length());
+  }
+  bool sameHandle = info[2].As<Napi::Boolean>().Value();
+  size_t offered = info[3].As<Napi::Number>().Uint32Value();
+  size_t length = info[4].As<Napi::Number>().Uint32Value();
+  std::vector<SAP_RAW> buffer(offered + 16, 0xEE);
+  RFC_CONNECTION_HANDLE own = reinterpret_cast<RFC_CONNECTION_HANDLE>(&ownConnection);
+  RFC_CONNECTION_HANDLE other =
+      reinterpret_cast<RFC_CONNECTION_HANDLE>(&otherConnection);
+  node_rfc::PassportOutcome outcome;
+  if (which == "end") {
+    node_rfc::passportOnClientCallEnd(own, nullptr, buffer.data(), offered, &length);
+  } else {
+    node_rfc::beginCallPassport(given ? &passport : nullptr, own);
+    node_rfc::passportOnClientCallStart(
+        sameHandle ? own : other, nullptr, buffer.data(), offered, &length);
+    outcome = node_rfc::endCallPassport();
+  }
+  Napi::Object result = Napi::Object::New(env);
+  result.Set("length", static_cast<double>(length));
+  result.Set("notPlaced", outcome.notPlaced);
+  result.Set("buffer",
+             Napi::Buffer<unsigned char>::Copy(env, buffer.data(), buffer.size()));
+  return result;
+}
+
 Napi::Object Init(Napi::Env env, Napi::Object exports) {
   node_rfc::__env = env;
   exports.Set("codes", Codes(env));
@@ -94,6 +140,7 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
   exports.Set("passportCallAnswer",
               Napi::Function::New(env, PassportCallAnswer));
   exports.Set("placePassport", Napi::Function::New(env, PlacePassport));
+  exports.Set("callbackView", Napi::Function::New(env, CallbackView));
   return exports;
 }
 

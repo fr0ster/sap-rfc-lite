@@ -36,6 +36,14 @@ interface TestAddon {
     offered: number,
     length: number,
   ) => { placed: boolean; length: number; buffer: Buffer };
+  /** What a passport manager callback leaves (test/native/shim.cc). */
+  callbackView?: (
+    which: 'start' | 'end',
+    passport: Buffer | null,
+    sameHandle: boolean,
+    offered: number,
+    lengthIn: number,
+  ) => { length: number; notPlaced: boolean; buffer: Buffer };
 }
 
 // Compiled to .test-build/test/; the repository root is two up.
@@ -111,6 +119,54 @@ describe(title, { skip: !built }, () => {
         answer(false, 'RFC_EXTERNAL_FAILURE', 'EXTERNAL_RUNTIME_FAILURE'),
         undefined,
       );
+    });
+  });
+
+  describe('the passport manager callbacks: no passport but the call\'s own', () => {
+    function view(
+      which: 'start' | 'end',
+      passport: Buffer | null,
+      sameHandle: boolean,
+      lengthIn: number,
+    ) {
+      const decide = addon?.callbackView;
+      assert.equal(typeof decide, 'function', 'the test addon has it');
+      if (!decide) throw new Error('no callbackView');
+      return decide(which, passport, sameHandle, 512, lengthIn);
+    }
+    const untouched = (buffer: Buffer) => buffer.every((b) => b === 0xee);
+
+    it('a call given no passport sends none, whatever the SDK offers (288 → 0)', () => {
+      const result = view('start', null, true, 288);
+      assert.equal(result.length, 0);
+      assert.ok(untouched(result.buffer));
+    });
+
+    it("a call's own passport is placed on its own handle", () => {
+      const passport = debuggeePassport();
+      const result = view('start', passport, true, 288);
+      assert.equal(result.length, 288);
+      assert.ok(result.buffer.subarray(0, 288).equals(passport));
+      assert.equal(result.notPlaced, false);
+    });
+
+    it('a request on another handle gets no passport (288 → 0)', () => {
+      const result = view('start', debuggeePassport(), false, 288);
+      assert.equal(result.length, 0);
+      assert.ok(untouched(result.buffer));
+    });
+
+    it('a passport that does not fit is not placed, and nothing is sent in its place (288 → 0)', () => {
+      const result = view('start', selfConsistentPassport(513), true, 288);
+      assert.equal(result.notPlaced, true);
+      assert.equal(result.length, 0);
+      assert.ok(untouched(result.buffer));
+    });
+
+    it('the end callback clears the returned passport (288 → 0)', () => {
+      const result = view('end', null, true, 288);
+      assert.equal(result.length, 0);
+      assert.ok(untouched(result.buffer));
     });
   });
 

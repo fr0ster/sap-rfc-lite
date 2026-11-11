@@ -248,7 +248,11 @@ describe(title, { skip: !ready }, () => {
     }
   });
 
-  it('the passport reaches only its own call: the next call on the client carries none', async () => {
+  // The system keeps a caught session's debugging state until the session is
+  // reset (spec 3.2, measured): the next call is made after the caller's
+  // reset. That the library sends no passport without one is proved on the
+  // callbacks themselves (test/native.test.ts).
+  it('the passport reaches only its own call: after a reset the next call is not caught', async () => {
     const ids = randomIds();
     const { listener, runner } = await debuggerFor(ids);
     try {
@@ -261,6 +265,7 @@ describe(title, { skip: !ready }, () => {
       );
       assert.ok(first.caught.debuggeeId, 'the listener caught the first run');
       await finishCaught(first.caught.debuggeeId, first.run);
+      await runner.resetServerContext();
       const next = await listenAndRun(listener, runner, ids, HOLD_EMPTY);
       await uncaught(next.caught, next.run);
     } finally {

@@ -8,11 +8,25 @@
 // value of the session file, a lock handle, an id or a passport.
 
 import fs from 'node:fs';
+import path from 'node:path';
 import type * as Lib from '../../src/ts/index';
 import type { Client, RfcConnectionParameters } from '../../src/ts/index';
 
-/** The package as built (`npm run build`): lib/ next to the repository root. */
+/**
+ * The package as built (`npm run build`): lib/ next to the repository root,
+ * and the binding it loads the local build. A failed `npm run build` removes
+ * build/Release, and node-gyp-build then loads the committed prebuild of an
+ * earlier release without a word (observed): this refuses to run on it.
+ */
 export function loadLib(root: string): typeof Lib {
+  const gypBuild: { path(dir: string): string } = require('node-gyp-build');
+  const binding = path.resolve(gypBuild.path(root));
+  const local = path.resolve(root, 'build', 'Release');
+  if (!binding.startsWith(local + path.sep)) {
+    throw new Error(
+      `the binding loaded is not the local build (build/Release) but ${path.relative(root, binding)}: run npm run build with the SDK`,
+    );
+  }
   const lib: typeof Lib = require(`${root}/lib/index.js`);
   return lib;
 }

@@ -18,32 +18,57 @@ thread_local PassportOutcome callOutcome;
 std::once_flag installOnce;
 RFC_ERROR_INFO installErrorInfo;
 
+}  // namespace
+
 // Before the SDK sends a client request: the passport of this thread's call,
 // for this call's handle only. Every other request (the SDK's metadata calls
-// inside RfcGetFunctionDesc, a call given no passport, another client's call)
-// is left as the SDK offered it: no passport. The return code is ignored by
-// the SDK (measured), so the callback always answers RFC_OK.
-RFC_RC SAP_API onClientCallStart(RFC_CONNECTION_HANDLE handle,
-                                 SAP_UC const* functionName,
-                                 SAP_RAW* buffer,
-                                 size_t bufferSize,
-                                 size_t* length) {
+// inside RfcGetFunctionDesc, a call given no passport, a request on another
+// handle, a passport that does not fit) sends none: the length is set to 0
+// whatever the SDK offered, since after a call that sent a passport the SDK
+// offers the one the system returned to every later call on the connection
+// (measured). The return code is ignored by the SDK (measured), so the
+// callback always answers RFC_OK.
+RFC_RC SAP_API passportOnClientCallStart(RFC_CONNECTION_HANDLE handle,
+                                         SAP_UC const* functionName,
+                                         SAP_RAW* buffer,
+                                         size_t bufferSize,
+                                         size_t* length) {
   UNUSED(functionName);
   if (callPassport != nullptr && handle == callHandle) {
-    if (!placePassport(callPassport->data(),
-                       callPassport->size(),
-                       buffer,
-                       bufferSize,
-                       length)) {
-      callOutcome.notPlaced = true;
-      callOutcome.offered = bufferSize;
+    if (placePassport(callPassport->data(),
+                      callPassport->size(),
+                      buffer,
+                      bufferSize,
+                      length)) {
+      return RFC_OK;
     }
+    callOutcome.notPlaced = true;
+    callOutcome.offered = bufferSize;
   }
+  *length = 0;
   return RFC_OK;
 }
 
-// The passport returned at the end of a call, and the server-side callbacks:
-// read nothing, change nothing (this package has no RFC server).
+// After the response: the passport the system returned is not read (out of
+// scope) and not kept. Left as given, the SDK keeps it and offers it to every
+// later call on the connection; with the length 0 it offers 0 (measured).
+RFC_RC SAP_API passportOnClientCallEnd(RFC_CONNECTION_HANDLE handle,
+                                       SAP_UC const* functionName,
+                                       SAP_RAW* buffer,
+                                       size_t bufferSize,
+                                       size_t* length) {
+  UNUSED(handle);
+  UNUSED(functionName);
+  UNUSED(buffer);
+  UNUSED(bufferSize);
+  *length = 0;
+  return RFC_OK;
+}
+
+namespace {
+
+// The server-side callbacks: read nothing, change nothing (this package has
+// no RFC server).
 RFC_RC SAP_API untouched(RFC_CONNECTION_HANDLE handle,
                          SAP_UC const* functionName,
                          SAP_RAW* buffer,
@@ -63,7 +88,11 @@ void installPassportManager() {
   std::call_once(installOnce, []() {
     std::memset(&installErrorInfo, 0, sizeof(installErrorInfo));
     RfcInstallPassportManager(
-        onClientCallStart, untouched, untouched, untouched, &installErrorInfo);
+        passportOnClientCallStart,
+        passportOnClientCallEnd,
+        untouched,
+        untouched,
+        &installErrorInfo);
   });
 }
 
