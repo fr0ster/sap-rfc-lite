@@ -14,3 +14,6 @@ build/
 
 # Compiled tests (npm test)
 .test-build/
+
+# The test-only native addon (test/native/, npm run build:test-native)
+test/native/build/
