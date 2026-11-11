@@ -24,6 +24,7 @@ import {
   adt,
   armBreakpoint,
   attachAndDetach,
+  checkListener,
   classUri,
   clearBreakpoints,
   createClass,
@@ -61,16 +62,6 @@ const title = ready
 const HOLD_CAUGHT = 30;
 /** How long the server holds a listener that is expected to catch nothing. */
 const HOLD_EMPTY = 10;
-/**
- * The listener is a long poll and the server says nothing when it stands, so
- * the run is started this long after the listener's request was sent.
- */
-const LISTENER_SETTLE_MS = 2000;
-
-function settle(): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, LISTENER_SETTLE_MS));
-}
-
 function read(value: unknown, name: string): unknown {
   return typeof value === 'object' && value !== null
     ? Reflect.get(value, name)
@@ -147,12 +138,54 @@ describe(title, { skip: !ready }, () => {
     }
   });
 
-  /** A debugger for `ids`: a listener's connection, a run's, an attach's. */
+  /**
+   * A debugger for `ids`: a listener's connection, a run's, and a checker's,
+   * which asks under an IDE id of its own whether the listener stands.
+   */
   async function debuggerFor(ids: Terminal) {
     const listener = await openClient();
     const runner = await openClient();
+    const checker = await openClient();
     await armBreakpoint(listener, ids, className);
-    return { listener, runner };
+    return { listener, runner, checker };
+  }
+
+  /**
+   * Resolve once the listener whose poll is `heard` stands at the system.
+   *
+   * Owner-approved test-only exception (2026-11-11) to "no polling": ADT
+   * offers no readiness event for a terminal-mode listener. Measured on
+   * premise: a run sent before the listener stands is not held and is not
+   * caught; a listener is registered only while its poll is held, so an
+   * answered first poll proves nothing; a second listener of the same user
+   * answers 409 only when it arrives after the first, and otherwise stands its
+   * whole hold without a word. The one thing that says "a listener stands" is
+   * the check's 409, so the check is repeated - with no pause beyond its own
+   * round trip - until it answers 409. The listener's own hold bounds the
+   * loop: if its poll settles before a 409 is seen, this fails saying so.
+   */
+  async function listening(
+    checker: Client,
+    heard: Promise<ListenerAnswer>,
+  ): Promise<void> {
+    let settled = false;
+    heard.then(
+      () => {
+        settled = true;
+      },
+      () => {
+        settled = true;
+      },
+    );
+    const asker = randomIds();
+    for (;;) {
+      if (settled) {
+        throw new Error(
+          "the listener's poll settled before the check answered 409 (a listener stands)",
+        );
+      }
+      if ((await checkListener(checker, asker)) === 'standing') return;
+    }
   }
 
   async function release(listener: Client, ids: Terminal): Promise<void> {
@@ -160,16 +193,20 @@ describe(title, { skip: !ready }, () => {
     assert.equal(await clearBreakpoints(listener, ids), 200);
   }
 
-  /** Listen, run with `passport`, and answer what the listener caught. */
+  /**
+   * Listen, run with `passport` once the listener stands, and answer what it
+   * caught.
+   */
   async function listenAndRun(
     listener: Client,
     runner: Client,
+    checker: Client,
     ids: Terminal,
     hold: number,
     passport?: Buffer,
   ) {
     const heard = listen(listener, ids, hold);
-    await settle();
+    await listening(checker, heard);
     const run = runClass(runner, className, passport);
     const caught = await heard;
     return { caught, run };
@@ -201,11 +238,12 @@ describe(title, { skip: !ready }, () => {
 
   it('a run carrying the debuggee passport is caught by the listener for its ids', async () => {
     const ids = randomIds();
-    const { listener, runner } = await debuggerFor(ids);
+    const { listener, runner, checker } = await debuggerFor(ids);
     try {
       const { caught, run } = await listenAndRun(
         listener,
         runner,
+        checker,
         ids,
         HOLD_CAUGHT,
         debuggeePassport(ids),
@@ -219,11 +257,12 @@ describe(title, { skip: !ready }, () => {
 
   it('a run without a passport is not caught', async () => {
     const ids = randomIds();
-    const { listener, runner } = await debuggerFor(ids);
+    const { listener, runner, checker } = await debuggerFor(ids);
     try {
       const { caught, run } = await listenAndRun(
         listener,
         runner,
+        checker,
         ids,
         HOLD_EMPTY,
       );
@@ -235,11 +274,12 @@ describe(title, { skip: !ready }, () => {
 
   it('a run carrying a passport for other ids is not caught', async () => {
     const ids = randomIds();
-    const { listener, runner } = await debuggerFor(ids);
+    const { listener, runner, checker } = await debuggerFor(ids);
     try {
       const { caught, run } = await listenAndRun(
         listener,
         runner,
+        checker,
         ids,
         HOLD_EMPTY,
         debuggeePassport(randomIds()),
@@ -256,11 +296,12 @@ describe(title, { skip: !ready }, () => {
   // callbacks themselves (test/native.test.ts).
   it('the passport reaches only its own call: after a reset the next call is not caught', async () => {
     const ids = randomIds();
-    const { listener, runner } = await debuggerFor(ids);
+    const { listener, runner, checker } = await debuggerFor(ids);
     try {
       const first = await listenAndRun(
         listener,
         runner,
+        checker,
         ids,
         HOLD_CAUGHT,
         debuggeePassport(ids),
@@ -268,7 +309,13 @@ describe(title, { skip: !ready }, () => {
       assert.ok(first.caught.caught, 'the listener caught the first run');
       await finishCaught(first.caught.debuggeeId, first.run);
       await runner.resetServerContext();
-      const next = await listenAndRun(listener, runner, ids, HOLD_EMPTY);
+      const next = await listenAndRun(
+        listener,
+        runner,
+        checker,
+        ids,
+        HOLD_EMPTY,
+      );
       await uncaught(next.caught, next.run);
     } finally {
       await release(listener, ids);
@@ -277,12 +324,12 @@ describe(title, { skip: !ready }, () => {
 
   it('a passport declaring 289 of its 288 bytes is refused before anything is sent', async () => {
     const ids = randomIds();
-    const { listener, runner } = await debuggerFor(ids);
+    const { listener, runner, checker } = await debuggerFor(ids);
     try {
       const passport = debuggeePassport(ids);
       passport.writeUInt16BE(289, 5);
       const heard = listen(listener, ids, HOLD_EMPTY);
-      await settle();
+      await listening(checker, heard);
       const refused = assert.rejects(
         runClass(runner, className, passport),
         (thrown) =>

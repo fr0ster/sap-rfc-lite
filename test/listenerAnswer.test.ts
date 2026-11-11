@@ -1,13 +1,14 @@
 // SPDX-FileCopyrightText: 2026 sap-rfc-lite contributors
 // SPDX-License-Identifier: Apache-2.0
 
-// The live suite's reading of a terminal-mode listener's answer (test/helpers/
-// live.ts), on answers made up here: a negative live test is only as good as
-// this reading, since "nothing caught" must not be any failed answer.
+// The live suite's reading of a terminal-mode listener's answer and of the
+// listener check (test/helpers/live.ts), on answers made up here: a negative
+// live test is only as good as this reading, since "nothing caught" must not
+// be any failed answer, and a run starts only on a check's 409.
 
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { readListenerAnswer } from './helpers/live';
+import { readListenerAnswer, readListenerCheck } from './helpers/live';
 
 const CAUGHT_BODY =
   '<?xml version="1.0" encoding="utf-8"?><asx:abap xmlns:asx="http://www.sap.com/abapxml" version="1.0"><asx:values><DEBUGGEES_LIST><STPDA_ADT_DEBUGGEE><DEBUGGEE_ID>DEBUGGEE-1</DEBUGGEE_ID></STPDA_ADT_DEBUGGEE></DEBUGGEES_LIST></asx:values></asx:abap>';
@@ -83,4 +84,35 @@ describe('the listener answer, as the live suite reads it', () => {
       refusedNaming(0),
     );
   });
+});
+
+describe('the listener check, as the live suite reads it', () => {
+  it('200 with an empty body is free', () => {
+    assert.equal(readListenerCheck({ status: 200, body: '' }), 'free');
+  });
+
+  it('409 is a listener standing', () => {
+    assert.equal(
+      readListenerCheck({ status: 409, body: '<exc:exception/>' }),
+      'standing',
+    );
+  });
+
+  for (const answer of [
+    { status: 500, body: '' },
+    { status: 403, body: '<exc:exception/>' },
+    { status: 200, body: '<asx:abap/>' },
+    { status: 0, body: '' },
+  ]) {
+    it(`status ${answer.status} with a body of ${answer.body.length} characters fails`, () => {
+      assert.throws(
+        () => readListenerCheck(answer),
+        (thrown) =>
+          thrown instanceof Error &&
+          thrown.message.includes('neither 200 with an empty body nor 409') &&
+          thrown.message.includes(`status ${answer.status},`) &&
+          thrown.message.includes(`${answer.body.length} characters`),
+      );
+    });
+  }
 });

@@ -385,6 +385,36 @@ export async function listen(
   return readListenerAnswer(answer);
 }
 
+/**
+ * Read a listener check's answer (measured on premise): 200 with an empty
+ * body when no listener of the user stands under another IDE id, 409 when one
+ * does. Anything else throws, naming the status and the body's length.
+ */
+export function readListenerCheck(answer: AdtAnswer): 'free' | 'standing' {
+  if (answer.status === 200 && answer.body === '') return 'free';
+  if (answer.status === 409) return 'standing';
+  throw new Error(
+    `the listener check answered neither 200 with an empty body nor 409: status ${answer.status}, a body of ${answer.body.length} characters`,
+  );
+}
+
+/**
+ * Ask, as the IDE `ids.ideId`, whether a listener of the same user stands
+ * under another IDE id. Starts nothing.
+ */
+export async function checkListener(
+  client: Client,
+  ids: Terminal,
+): Promise<'free' | 'standing'> {
+  const answer = await adt(
+    client,
+    'GET',
+    `${DEBUGGER}/listeners?${terminalQuery(ids, { checkConflict: 'true' })}`,
+    { headers: { Accept: 'application/xml' } },
+  );
+  return readListenerCheck(answer);
+}
+
 /** Release the listener (it also deletes the key's breakpoints). */
 export async function stopListener(
   client: Client,
