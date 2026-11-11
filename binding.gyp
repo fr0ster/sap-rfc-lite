@@ -91,6 +91,8 @@
                 'src/cpp/addon.cc',
                 'src/cpp/nwrfcsdk.cc',
                 'src/cpp/Client.cc',
+                'src/cpp/connectionEnd.cc',
+                'src/cpp/passport.cc',
             ],
             'defines': [
                 '_CONSOLE',

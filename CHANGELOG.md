@@ -5,9 +5,31 @@ All notable changes to `@mcp-abap-adt/sap-rfc-lite` are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.4.0] - 2026-11-11
+
+### Added
+
+- **A per-call passport.** `client.call(rfmName, rfmParams?, { passport })` sends the binary SAP
+  passport with that call through the SDK's passport manager, installed once when the addon
+  loads. It is what lets an ABAP program started over RFC be caught by a terminal-mode
+  external debugger. Sent with that call only: a call without one sends none, and neither an
+  earlier call's passport nor the one the system returns is kept. Refused with a `TypeError`
+  before sending: an empty one, one without `*TH*` at its start or end, one whose declared
+  length (bytes 5–6) is not its own. One longer than the buffer the SDK offers is not placed:
+  the call runs without it, its effects remain, and `call` rejects saying so. The system keeps
+  a caught session's debugging state until the session is reset (`resetServerContext()`), which
+  is the caller's (README, "The passport").
 
 ### Changed
+
+- **Breaking: no silent reconnect.** After an error that leaves the connection unusable (codes
+  `RFC_COMMUNICATION_FAILURE`, `RFC_ABAP_RUNTIME_FAILURE`, `RFC_ABAP_MESSAGE`,
+  `RFC_EXTERNAL_FAILURE`, `RFC_CLOSED`; groups `ABAP_RUNTIME_FAILURE`, `LOGON_FAILURE`,
+  `COMMUNICATION_FAILURE`, `EXTERNAL_RUNTIME_FAILURE`) the library no longer opens a new
+  connection. It closes the handle, `alive` turns `false`, the call's own error is returned as
+  the SDK gave it, and later calls answer the closed-connection error until the caller opens
+  the connection again. 0.3.x reopened, so the next call ran on a new ABAP session without a
+  word, and when the reopen failed it answered the reopen's error instead of the call's.
 
 - **The 7-day release age is dropped.** `.npmrc` no longer sets `min-release-age=7`. The age gate
   conflicted with the gating `npm audit`: a security fix younger than the gate could not be
@@ -15,6 +37,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   stay: `allowScripts` with `strict-allow-scripts=true` (no dependency install script runs),
   lockfile hashes, `npm ci --ignore-scripts` in CI, and the gating `npm audit`. Dependabot's own
   cooldown is unchanged.
+
+### Fixed
+
+- **The handle is no longer dropped without being closed** after such an error: 0.3.x replaced
+  it with the reopened one without `RfcCloseConnection`.
+
+### Migration from 0.3.x
+
+A consumer that relied on the next call working after an ABAP message, a runtime error or a
+communication failure checks `alive` after a failed call, or the closed-connection error of
+the next one, and calls `open()` itself — knowing that the new connection is a new ABAP
+session: locks, buffers and context of the old one are gone.
 
 ## [0.3.2] - 2026-10-22
 

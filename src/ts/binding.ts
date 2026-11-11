@@ -20,7 +20,7 @@ export interface RfcClientBinding {
     rfmName: string,
     rfmParams: RfcObject,
     callback: (err: unknown, res: RfcObject) => void,
-    callOptions?: object,
+    callOptions?: { passport: Buffer },
   ): void;
 }
 

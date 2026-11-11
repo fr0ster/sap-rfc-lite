@@ -21,7 +21,7 @@ No other lightweight alternative exists in the Node.js ecosystem. The only other
 
 | | sap-rfc-lite | node-rfc |
 |---|---|---|
-| Source code | ~2,200 lines | ~14,200 lines |
+| Source code | ~2,700 lines | ~14,200 lines |
 | Runtime dependencies | 2 | 4 (includes bluebird, decimal.js) |
 | Vulnerabilities (npm audit) | **0** | **24** |
 | Outdated packages | 1 (dev only: `@types/node`, kept on an older Node.js line on purpose) | 18 (including runtime) |
@@ -183,12 +183,38 @@ Creates a new RFC client instance.
 
 Opens the RFC connection.
 
-### `client.call(rfmName, rfmParams?): Promise<RfcObject>`
+### `client.call(rfmName, rfmParams?, options?): Promise<RfcObject>`
 
 Invokes a remote function module.
 
 - `rfmName` — name of the function module
 - `rfmParams` — optional input parameters
+- `options` — optional `RfcCallOptions`:
+  - `passport` — a `Buffer` holding a binary SAP passport (the bytes an HTTP request carries
+    as `SAP-PASSPORT`), sent with this call through the SDK's passport manager.
+
+**The passport.** It is what lets an ABAP program started over RFC be caught by an external
+debugger listening in terminal mode: the debuggee passport carries the listener's terminal
+and IDE ids. Building it is the caller's.
+
+- It is sent with this call only. A call without `passport` sends none: neither the passport
+  of an earlier call nor the one the system returns at the end of a call is kept for later
+  calls. The bytes are copied when `call` is invoked.
+- **The system keeps the debugging state in the session.** Once a call was caught by a
+  listener, the ABAP session keeps that state: later calls on the same connection are caught
+  by a listener for the same ids even though they carry no passport, until the session is
+  reset (measured). Resetting it — `client.resetServerContext()` — is the caller's, as is
+  using a fresh connection.
+- Refused with a `TypeError` before anything is sent: an empty `Buffer`; one that does not
+  start with the eye catcher `*TH*`, or does not end with it; one whose length declared in
+  bytes 5–6 (unsigned 16-bit, big-endian) is not its own length. The system ignores a
+  passport whose declared length is wrong without a word, so the check is made here.
+- A passport longer than the buffer the SDK offers for the call is not placed: the call runs
+  on the system without it, **its effects there remain**, and `call` rejects with an error
+  saying so and naming both lengths; the call's result is not returned.
+- If the passport manager could not be installed when the addon loaded, a call given a
+  passport is refused with the SDK's error of that install, before anything is sent. Calls
+  without a passport are not affected.
 
 ### `client.resetServerContext(): Promise<void>`
 
@@ -202,7 +228,8 @@ that is kept open.
 
 ### `client.close(): Promise<void>`
 
-Closes the RFC connection.
+Closes the RFC connection. On a connection that is already closed — by `close()`, or by the
+library after an error that ended it — it rejects with the closed-connection error.
 
 ### `client.id: number`
 
@@ -210,7 +237,43 @@ Unique client instance identifier.
 
 ### `client.alive: boolean`
 
-Whether the connection is currently open.
+Whether the connection is currently open. It is `false` after an error that ended the
+connection (see below) until the caller opens it again.
+
+## When a call ends the connection
+
+The library never opens a connection the caller did not open. A failed call is answered with
+the error the SDK gave for that call, as it came.
+
+When that error leaves the connection unusable, the library closes the handle once and
+releases it: `alive` turns `false`, and every later `call` or `resetServerContext()` rejects
+with the closed-connection error (`nodeRfcError`, "RFM client request over closed
+connection: …") before anything is sent, until the caller calls `open()`. `open()` opens a
+**new** connection, which is a new ABAP session: the locks, buffers and context of the old
+one are gone.
+
+The errors that end the connection — the same for a call, the function-description lookup
+before it, and `resetServerContext()`:
+
+- codes `RFC_COMMUNICATION_FAILURE`, `RFC_ABAP_RUNTIME_FAILURE`, `RFC_ABAP_MESSAGE`,
+  `RFC_EXTERNAL_FAILURE`, `RFC_CLOSED`;
+- groups `ABAP_RUNTIME_FAILURE`, `LOGON_FAILURE`, `COMMUNICATION_FAILURE`,
+  `EXTERNAL_RUNTIME_FAILURE`.
+
+| After | Error answered | `alive` | Next `call` |
+|---|---|---|---|
+| success | — | `true` | runs on the same connection |
+| an error outside the set (e.g. `RFC_ABAP_EXCEPTION`) | that error | `true` | runs on the same connection |
+| an error in the set | that error, as the SDK gave it | `false` | closed-connection error, nothing sent |
+| `open()` after that | — | `true` | runs on the new connection the caller opened |
+
+### Migration from 0.3.x
+
+0.3.x opened a new connection on its own after these errors, so the next call worked — on a
+new ABAP session, without saying so. Now a consumer that relied on that checks `alive` after
+a failed call (or catches the closed-connection error of the next one) and calls `open()`
+itself, knowing that the new connection is a new session: a lock taken before the error is
+gone, and its handle is refused.
 
 ## Changelog
 

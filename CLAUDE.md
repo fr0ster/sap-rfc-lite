@@ -22,6 +22,8 @@ npm test                 # tsc -p tsconfig.test.json, then node:test (scripts/ru
 
 Use npm scripts only, never `npx`.
 
+`npm run build:test-native` builds the test addon (SDK required). Native tests skip without `test/native/build`, live tests without `SAP_RFC_LITE_LIVE_ENV`, each naming its reason; live tests need `npm run build` and assert that the local `build/Release` is loaded.
+
 The `SAPNWRFC_HOME` env var must point to the NW RFC SDK root (containing `lib/` and `include/`).
 If the addon fails to load with `ERR_DLOPEN_FAILED`, see "Runtime library loading" in `README.md` (`LD_LIBRARY_PATH`).
 
@@ -49,6 +51,8 @@ src/ts/                      src/cpp/                               libsapnwrfc
   - `CloseAsync` → `RfcCloseConnection()`
   - `PrepareAsync` → gets function descriptor, sets parameters, then chains to:
   - `InvokeAsync` → `RfcInvoke()`, extracts results
+- **Passport manager** — installed once at module registration (`RfcInstallPassportManager`); its install result is kept, and a call given a passport is refused with it when the install failed. A call's passport (`call(name, params, { passport })`) is copied into that call's workers and handed to the SDK through `thread_local`s set immediately around `RfcInvoke`; the start callback places it only for its own call and handle, and only when it fits the buffer the SDK offers, and sets the length to 0 for every other request; the end callback sets it to 0, so the passport the system returns is never carried to a later call. A call whose passport did not fit has run without it and rejects saying so. `call` refuses, before sending, a passport that is empty, lacks `*TH*` at its start or end, or declares a length (bytes 5–6, u16 BE) other than its own.
+- **No reconnect** — the library never opens a connection the caller did not open. On an error for which `endsConnection` is true (codes `RFC_COMMUNICATION_FAILURE`, `RFC_ABAP_RUNTIME_FAILURE`, `RFC_ABAP_MESSAGE`, `RFC_EXTERNAL_FAILURE`, `RFC_CLOSED`; groups `ABAP_RUNTIME_FAILURE`, `LOGON_FAILURE`, `COMMUNICATION_FAILURE`, `EXTERNAL_RUNTIME_FAILURE`) the handle is closed once and released, `alive` is `false`, and the operation's own error is returned.
 - **`nwrfcsdk.cc`** — Data type conversion (JS ↔ SAP Unicode) and error formatting.
 - **`nwrfcsdk.h`** — Core structs: `ConnectionParamsStruct` (owns RFC_CONNECTION_PARAMETER array), `ClientOptionsStruct` (BCD/date/time transformers), `RfmErrorPath` (breadcrumb trail for nested error locations).
 

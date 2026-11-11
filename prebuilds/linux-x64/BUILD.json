@@ -1,12 +1,12 @@
 {
   "target": "linux-x64",
   "binary": "@mcp-abap-adt+sap-rfc-lite.glibc.node",
-  "sourceHash": "0a486c918f18841738d547334a403b95fdb493aa70ce85f04373d71934c3966f",
+  "sourceHash": "41678890e11a1b65f0b6008e3412b072d7b7ad1fa88cb8558c0bc967e8861692",
   "nodeAddonApi": "8.9.2",
   "sdk": {
     "major": 7500,
     "minor": 0,
     "patchLevel": 18
   },
-  "builtAt": "2026-10-21"
+  "builtAt": "2026-11-11"
 }

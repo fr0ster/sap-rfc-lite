@@ -51,3 +51,12 @@ export interface NodeRfcError {
 }
 
 export type RfcError = RfcLibError | AbapError | NodeRfcError;
+
+/** What one call may carry besides its parameters. */
+export interface RfcCallOptions {
+  /**
+   * The binary SAP passport sent with this call only, as given (the bytes an
+   * HTTP request carries as `SAP-PASSPORT`); absent: no passport is sent.
+   */
+  passport?: Buffer | undefined;
+}
