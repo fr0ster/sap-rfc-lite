@@ -17,6 +17,7 @@
                 'shim.cc',
                 '../../src/cpp/nwrfcsdk.cc',
                 '../../src/cpp/connectionEnd.cc',
+                '../../src/cpp/passport.cc',
             ],
             'include_dirs': ['<(napi_include_dir)', '<(nwrfcsdk_dir)/include', '../../src/cpp'],
             'cflags!': ['-fno-exceptions'],

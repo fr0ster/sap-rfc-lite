@@ -4,6 +4,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "Client.h"
+#include "passport.h"
 
 namespace node_rfc {
 
@@ -31,6 +32,9 @@ Napi::Object RegisterModule(Napi::Env env, Napi::Object exports) {
   if (node_rfc::__env == nullptr) {
     node_rfc::__env = env;
   }
+
+  // Once per process: every client call's passport goes through it.
+  installPassportManager();
 
   exports.Set("bindingVersions", BindingVersions(env));
   Client::Init(env, exports);

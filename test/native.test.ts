@@ -10,13 +10,32 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, it } from 'node:test';
-import { debuggeePassport } from './helpers/passport';
+import {
+  debuggeePassport,
+  selfConsistentPassport,
+} from './helpers/passport';
 
 /** What the shim (test/native/shim.cc) exposes. */
 interface TestAddon {
   codes: Record<string, number>;
   groups: Record<string, number>;
   endsConnection?: (code: number, group: number) => boolean;
+  /** The answer to a call given the passport manager's install result. */
+  passportCallAnswer?: (
+    hasPassport: boolean,
+    installCode: number,
+    installGroup: number,
+  ) => unknown;
+  /**
+   * The placement of `passport` into a buffer the SDK offers of `offered`
+   * bytes, its length `length` as given: the buffer handed to the decision is
+   * `offered + 16` bytes of 0xEE, so a write past `offered` is visible.
+   */
+  placePassport?: (
+    passport: Buffer,
+    offered: number,
+    length: number,
+  ) => { placed: boolean; length: number; buffer: Buffer };
 }
 
 // Compiled to .test-build/test/; the repository root is two up.
@@ -55,7 +74,80 @@ function endsConnection(codeName: string, groupName: string): boolean {
   return decide ? decide(code(codeName), group(groupName)) : false;
 }
 
+function field(value: unknown, name: string): unknown {
+  return typeof value === 'object' && value !== null
+    ? Reflect.get(value, name)
+    : undefined;
+}
+
 describe(title, { skip: !built }, () => {
+  describe('the passport manager: a passport call when the install failed', () => {
+    function answer(hasPassport: boolean, codeName: string, groupName: string) {
+      const decide = addon?.passportCallAnswer;
+      assert.equal(typeof decide, 'function', 'the test addon has it');
+      return decide
+        ? decide(hasPassport, code(codeName), group(groupName))
+        : undefined;
+    }
+
+    it('a call with a passport is refused with the install error, as every SDK error is built', () => {
+      const refusal = answer(
+        true,
+        'RFC_EXTERNAL_FAILURE',
+        'EXTERNAL_RUNTIME_FAILURE',
+      );
+      assert.equal(field(refusal, 'name'), 'RfcLibError');
+      assert.equal(field(refusal, 'code'), code('RFC_EXTERNAL_FAILURE'));
+      assert.equal(field(refusal, 'codeString'), 'RFC_EXTERNAL_FAILURE');
+      assert.equal(field(refusal, 'group'), group('EXTERNAL_RUNTIME_FAILURE'));
+    });
+
+    it('a call with a passport is not refused when the install succeeded', () => {
+      assert.equal(answer(true, 'RFC_OK', 'OK'), undefined);
+    });
+
+    it('a call without a passport is never refused for it', () => {
+      assert.equal(
+        answer(false, 'RFC_EXTERNAL_FAILURE', 'EXTERNAL_RUNTIME_FAILURE'),
+        undefined,
+      );
+    });
+  });
+
+  describe('the placement of a passport into the buffer the SDK offers', () => {
+    function place(passport: Buffer, offered: number) {
+      const decide = addon?.placePassport;
+      assert.equal(typeof decide, 'function', 'the test addon has it');
+      if (!decide) throw new Error('no placePassport');
+      return decide(passport, offered, 0);
+    }
+
+    it('a passport shorter than the buffer is copied and its length set', () => {
+      const passport = debuggeePassport();
+      const result = place(passport, 512);
+      assert.equal(result.placed, true);
+      assert.equal(result.length, 288);
+      assert.ok(result.buffer.subarray(0, 288).equals(passport));
+      assert.ok(result.buffer.subarray(288).every((b) => b === 0xee));
+    });
+
+    it('a passport exactly the size of the buffer is placed', () => {
+      const passport = selfConsistentPassport(512);
+      const result = place(passport, 512);
+      assert.equal(result.placed, true);
+      assert.equal(result.length, 512);
+      assert.ok(result.buffer.subarray(0, 512).equals(passport));
+      assert.ok(result.buffer.subarray(512).every((b) => b === 0xee));
+    });
+
+    it('a passport larger than the buffer is not placed: nothing written, the length as given', () => {
+      const result = place(selfConsistentPassport(513), 512);
+      assert.equal(result.placed, false);
+      assert.equal(result.length, 0);
+      assert.ok(result.buffer.every((b) => b === 0xee));
+    });
+  });
+
   describe('endsConnection: the errors that end the connection', () => {
     for (const name of [
       'RFC_COMMUNICATION_FAILURE',

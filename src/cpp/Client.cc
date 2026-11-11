@@ -5,6 +5,7 @@
 
 #include "Client.h"
 #include "connectionEnd.h"
+#include "passport.h"
 #include <mutex>
 #include <thread>
 #include <tuple>
@@ -238,18 +239,27 @@ class InvokeAsync : public Napi::AsyncWorker {
   InvokeAsync(Napi::Function& callback,
               Client* client,
               RFC_FUNCTION_HANDLE functionHandle,
-              RFC_FUNCTION_DESC_HANDLE functionDescHandle)
+              RFC_FUNCTION_DESC_HANDLE functionDescHandle,
+              bool hasPassport,
+              std::vector<unsigned char> passport)
       : Napi::AsyncWorker(callback),
         client(client),
         functionHandle(functionHandle),
-        functionDescHandle(functionDescHandle) {}
+        functionDescHandle(functionDescHandle),
+        hasPassport(hasPassport),
+        passport(std::move(passport)) {}
   ~InvokeAsync() {}
 
   void Execute() {
     client->LockMutex();
     conn_closed = (client->connectionHandle == nullptr);
     if (!conn_closed) {
+      // The passport reaches this call only: set for this thread and handle
+      // immediately before RfcInvoke, cleared immediately after it.
+      beginCallPassport(hasPassport ? &passport : nullptr,
+                        client->connectionHandle);
       RfcInvoke(client->connectionHandle, functionHandle, &errorInfo);
+      passportOutcome = endCallPassport();
       if (errorInfo.code != RFC_OK) {
         client->releaseIfEnded(errorInfo);
       }
@@ -270,7 +280,21 @@ class InvokeAsync : public Napi::AsyncWorker {
                                             Env()),
                   Env().Undefined());
 
-    if (result.first.IsUndefined()) {
+    if (result.first.IsUndefined() && passportOutcome.notPlaced) {
+      // The call ran on the system without its passport, which did not fit
+      // the buffer the SDK offered; what the call did there remains. Its
+      // result is not returned.
+      result.first = nodeRfcError(
+          "invoke() " +
+          wrapString(client->errorPath.functionName)
+              .As<Napi::String>()
+              .Utf8Value() +
+          ": the call ran without the passport, which is " +
+          std::to_string(passport.size()) + " bytes, longer than the " +
+          std::to_string(passportOutcome.offered) +
+          " bytes the SDK offered for it; what the call did in the system "
+          "remains");
+    } else if (result.first.IsUndefined()) {
       result = getRfmParameters(functionDescHandle,
                                 functionHandle,
                                 &client->errorPath,
@@ -290,6 +314,9 @@ class InvokeAsync : public Napi::AsyncWorker {
   RFC_FUNCTION_DESC_HANDLE functionDescHandle;
   RFC_ERROR_INFO errorInfo;
   bool conn_closed = false;
+  bool hasPassport;
+  std::vector<unsigned char> passport;
+  PassportOutcome passportOutcome;
 };
 
 class PrepareAsync : public Napi::AsyncWorker {
@@ -298,11 +325,15 @@ class PrepareAsync : public Napi::AsyncWorker {
                Client* client,
                Napi::String rfmName,
                Napi::Array& notRequestedParameters,
-               Napi::Object& rfmParams)
+               Napi::Object& rfmParams,
+               bool hasPassport,
+               std::vector<unsigned char> passport)
       : Napi::AsyncWorker(callback),
         client(client),
         notRequested(Napi::Persistent(notRequestedParameters)),
-        rfmParams(Napi::Persistent(rfmParams)) {
+        rfmParams(Napi::Persistent(rfmParams)),
+        hasPassport(hasPassport),
+        passport(std::move(passport)) {
     funcName = setString(rfmName);
     client->errorPath.setFunctionName(funcName);
   }
@@ -381,8 +412,12 @@ class PrepareAsync : public Napi::AsyncWorker {
 
     if (argv[0].IsUndefined()) {
       Napi::Function callbackFunction = Callback().Value().As<Napi::Function>();
-      (new InvokeAsync(
-           callbackFunction, client, functionHandle, functionDescHandle))
+      (new InvokeAsync(callbackFunction,
+                       client,
+                       functionHandle,
+                       functionDescHandle,
+                       hasPassport,
+                       std::move(passport)))
           ->Queue();
     } else {
       Callback().Call({argv[0], argv[1]});
@@ -400,6 +435,8 @@ class PrepareAsync : public Napi::AsyncWorker {
   RFC_FUNCTION_DESC_HANDLE functionDescHandle;
   RFC_ERROR_INFO errorInfo;
   bool conn_closed = false;
+  bool hasPassport;
+  std::vector<unsigned char> passport;
 };
 
 Napi::Value Client::Open(const Napi::CallbackInfo& info) {
@@ -457,6 +494,11 @@ Napi::Value Client::Invoke(const Napi::CallbackInfo& info) {
 
   Napi::Function callback = info[2].As<Napi::Function>();
 
+  // The call's passport, copied now: a caller that changes its Buffer later
+  // changes nothing that is sent. The Client holds no passport.
+  bool hasPassport = false;
+  std::vector<unsigned char> passport;
+
   if (info[3].IsObject()) {
     Napi::Object options = info[3].ToObject();
     Napi::Array props = options.GetPropertyNames();
@@ -468,6 +510,17 @@ Napi::Value Client::Invoke(const Napi::CallbackInfo& info) {
       } else if (key.Utf8Value().compare(
                      std::string(CALL_OPTION_KEY_TIMEOUT)) == (int)0) {
         // timeout = options.Get(key).As<Napi::Array>();
+      } else if (key.Utf8Value().compare(
+                     std::string(CALL_OPTION_KEY_PASSPORT)) == (int)0) {
+        Napi::Value value = options.Get(key);
+        if (!value.IsBuffer()) {
+          Napi::TypeError::New(info.Env(), "The passport must be a Buffer")
+              .ThrowAsJavaScriptException();
+          return info.Env().Undefined();
+        }
+        Napi::Buffer<unsigned char> bytes = value.As<Napi::Buffer<unsigned char>>();
+        passport.assign(bytes.Data(), bytes.Data() + bytes.Length());
+        hasPassport = true;
       } else {
         char err[ERRMSG_LENGTH];
         std::string optionName = key.Utf8Value();
@@ -477,10 +530,26 @@ Napi::Value Client::Invoke(const Napi::CallbackInfo& info) {
     }
   }
 
+  // A call given a passport while the passport manager could not be installed
+  // is refused with the installer's error, before anything is queued or sent.
+  Napi::Value refusal =
+      passportCallRefusal(hasPassport, passportManagerInstall());
+  if (!refusal.IsUndefined()) {
+    callback.Call({refusal});
+    return info.Env().Undefined();
+  }
+
   Napi::String rfmName = info[0].As<Napi::String>();
   Napi::Object rfmParams = info[1].As<Napi::Object>();
 
-  (new PrepareAsync(callback, this, rfmName, notRequested, rfmParams))->Queue();
+  (new PrepareAsync(callback,
+                    this,
+                    rfmName,
+                    notRequested,
+                    rfmParams,
+                    hasPassport,
+                    std::move(passport)))
+      ->Queue();
 
   return info.Env().Undefined();
 }
