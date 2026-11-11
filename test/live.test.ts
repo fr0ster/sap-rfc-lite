@@ -24,6 +24,7 @@ import {
   adt,
   armBreakpoint,
   attachAndDetach,
+  classUri,
   clearBreakpoints,
   createClass,
   deleteClass,
@@ -129,10 +130,17 @@ describe(title, { skip: !ready }, () => {
   });
 
   after(async () => {
+    // Every session the tests opened ends first, and with it any lock a failed
+    // test left behind; then the class is deleted on a session of its own.
+    await closeAll();
     try {
       const admin = await openClient();
       const deleted = await deleteClass(admin, className);
       assert.ok(deleted < 300, `deleting the test class answered ${deleted}`);
+      // The deletion answers 200 also when it deleted nothing (a lock held
+      // elsewhere): the class is gone only when reading it answers 404.
+      const gone = await adt(admin, 'GET', classUri(className));
+      assert.equal(gone.status, 404, 'the test class is gone');
     } finally {
       await closeAll();
     }
@@ -286,30 +294,34 @@ describe(title, { skip: !ready }, () => {
     const holder = await openClient();
     const other = await openClient();
     const passport = selfConsistentPassport(65535);
-    const refused = assert.rejects(
-      adt(
-        holder,
-        'POST',
-        `/sap/bc/adt/oo/classes/${className.toLowerCase()}?_action=LOCK&accessMode=MODIFY`,
-        { passport },
-      ),
-      (thrown) => {
-        const message = read(thrown, 'message');
-        return (
-          read(thrown, 'name') === 'nodeRfcError' &&
-          typeof message === 'string' &&
-          message.includes('ran without the passport') &&
-          message.includes('65535 bytes')
-        );
-      },
-    );
-    await refused;
-    assert.equal(holder.alive, true, 'the connection stays open');
-    // The call ran: the lock it took is held, so another session's is refused.
-    const blocked = await lockClass(other, className);
-    assert.equal(blocked.handle, undefined, 'the lock is held by the call');
-    // Release it with the session that holds it, then prove it is free.
-    await holder.resetServerContext();
+    try {
+      const refused = assert.rejects(
+        adt(
+          holder,
+          'POST',
+          `${classUri(className)}?_action=LOCK&accessMode=MODIFY`,
+          { passport },
+        ),
+        (thrown) => {
+          const message = read(thrown, 'message');
+          return (
+            read(thrown, 'name') === 'nodeRfcError' &&
+            typeof message === 'string' &&
+            message.includes('ran without the passport') &&
+            message.includes('65535 bytes')
+          );
+        },
+      );
+      await refused;
+      assert.equal(holder.alive, true, 'the connection stays open');
+      // The call ran: the lock it took is held, so another session's is
+      // refused.
+      const blocked = await lockClass(other, className);
+      assert.equal(blocked.handle, undefined, 'the lock is held by the call');
+    } finally {
+      // Release whatever the call holds with the session that holds it.
+      await holder.resetServerContext();
+    }
     const free = await lockClass(other, className);
     assert.ok(free.handle, `the lock is free again (${free.status})`);
     assert.equal(await unlockClass(other, className, free.handle), 200);
