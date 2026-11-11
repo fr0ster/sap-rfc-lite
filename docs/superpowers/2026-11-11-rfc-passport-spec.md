@@ -136,8 +136,11 @@ The ADT client's debuggee passport is 288 bytes (Code: adt-clients
   whether `nullptr` is accepted for them is not documented (SAP) — the implementation
   passes functions that return `RFC_OK` and touch nothing, as the probe did (Measured with
   such functions).
-- `onClientCallEnd` reads nothing and returns `RFC_OK` (out of scope: the returned
-  passport).
+- `onClientCallEnd` reads nothing of the returned passport (out of scope) and sets
+  `*eppLength` to 0 before returning `RFC_OK` (owner's decision): the SDK otherwise keeps
+  the passport the system returned at the end of a call and offers it to every later call
+  on that connection (see "What the SDK carries over" in 3.2); with the length set to 0
+  it offers 0 (Measured).
 - If the installation fails: SAP documents only that `errorInfo` is filled "in case the
   handlers could not be installed"; no failure was observed (Measured: `RFC_OK`). The
   module loads all the same and keeps the installer's `RFC_ERROR_INFO`. A call given a
@@ -155,12 +158,26 @@ The ADT client's debuggee passport is 288 bytes (Code: adt-clients
   immediately after `RfcInvoke` returns — on every path — it sets both back to `nullptr`.
 - `onClientCallStart(handle, …, buffer, size, length)`: when the thread-local pointer is set
   and `handle` equals the thread-local handle, it hands the passport to the SDK — copies it
-  into `buffer` and sets `*length` to its size; otherwise it leaves `buffer` and `*length`
-  as given (length 0, as measured) and returns `RFC_OK`.
+  into `buffer` and sets `*length` to its size; otherwise it sets `*length` to 0, whatever
+  the SDK offered (owner's decision), writes nothing into `buffer`, and returns `RFC_OK`.
 - **The passport against the offered buffer** (check 2, owner's decision). In the start
   callback the passport's length is compared with `eppBufferSize`, the buffer the SDK offers
   for that call. A passport that fits is placed as above. One that does not is not placed:
-  the callback writes nothing into `buffer` and leaves `*eppLength` as given (0).
+  the callback writes nothing into `buffer` and sets `*eppLength` to 0, so nothing is sent
+  in its place.
+- **What the SDK carries over** (Measured, SDK 7500 PL18, Linux, 2026-11-11). After a call
+  that sent a passport, the end callback receives the passport the system returned (288
+  bytes for the debuggee passport), and the SDK then offers it — `*eppLength == 288` — to the
+  start callback of every later client call on that connection, `RfcResetServerContext`'s
+  included. Left as given, it is sent. Hence both clearings: the end callback sets the
+  length to 0 (the SDK then offers 0 to later calls, Measured), and the start callback of
+  a call given no passport sets 0 whatever is offered.
+- **What the system keeps** (Measured, 2026-11-11, once). An ABAP session that ran a call
+  caught by a terminal-mode listener keeps that debugging state: later runs on the same
+  connection without any passport sent (the SDK offering 0) were caught by a listener for
+  the same ids, until `resetServerContext()`; after it, and on a fresh connection, they
+  were not. This is the system's, not the library's: resetting the session is the
+  caller's (README).
 - **What the SDK does with the callback's answers** (Measured, SDK 7500 PL18, Linux; SAP
   documents none of it):
   - the start callback's return code is ignored: returning `RFC_EXTERNAL_FAILURE` with no
@@ -245,7 +262,10 @@ objects' shape: unchanged (Code). No timeout, retry or polling is added.
 ## 5. Documentation
 
 - **README**, "API": `client.call(rfmName, rfmParams?, options?)` with `options.passport`
-  (what it is for, that it is sent with that call only, that none is sent without it, that an
+  (what it is for, that it is sent with that call only, that none is sent without it — the
+  passport the system returns is not kept for later calls —, that the system keeps a
+  caught session's debugging state in the ABAP session until it is reset, and that
+  resetting it (`resetServerContext()`) is the caller's, that an
   empty one, one without `*TH*` at its start or at its end and one whose declared length
   differs from its length are refused before sending, that one larger than the buffer the
   SDK offers is not placed — the call runs without it, its effects remain, and `call`
@@ -298,6 +318,10 @@ in their title elsewhere.
   unaffected.
 - A call on a client that was never opened, with and without a passport, answers the
   closed-connection error and sends nothing (Code path; no system needed).
+- The callbacks themselves (test addon): the start callback of a call given no passport
+  sets the length to 0 whatever the SDK offers (288 offered → 0); of a call given one, on
+  its own handle, places it; on another handle, sets 0; of a call whose passport does not
+  fit, writes nothing and sets 0; the end callback sets the length to 0 (288 → 0).
 - Whether the close-on-error path can be driven without a system (a logon to a closed
   local port gives `RFC_COMMUNICATION_FAILURE` at `open`, not on a call — Inference) is
   checked when writing the plan; the path is proved live (6.3) in any case.
@@ -318,9 +342,13 @@ closes every connection in a `finally`.
   and the run returns at once. (Measured.)
 - **Not caught with another passport**: a passport for other ids → not caught; shows the
   match is the ids'. (Measured.)
-- **Only its own call**: the call after the caught run, on the same client with no
-  passport, sends none (the start callback's length stays 0 — read through the run not
-  being caught by a second listener for the same ids).
+- **Only its own call**: after the caught run, the caller resets the session
+  (`resetServerContext()`), and the next call on the same client with no passport is not
+  caught by a second listener for the same ids. That the library sends no passport for a
+  call without one — the start callback's length 0 whatever the SDK offers, and the end
+  callback's 0 — is proved without a system, on the callbacks themselves (6.2): the
+  session's own debugging state (3.2, "What the system keeps") makes the live call
+  without a reset unfit to show it.
 - **The error as it came, then closed**: `RFC_RAISE_ERROR` with `METHOD = '0'`,
   `MESSAGETYPE = 'E'` → rejects with `RFC_ABAP_MESSAGE`; `METHOD = '3'` → rejects with
   `RFC_ABAP_RUNTIME_FAILURE` (Measured codes); after each `alive` is `false` and the next
@@ -347,9 +375,10 @@ closes every connection in a `finally`.
 ### 6.4 Load-bearing
 
 Each rule is broken once on purpose and its test watched going red, then restored:
-setting the thread-local after `RfcInvoke` instead of before (caught test red); not
-clearing it (only-its-own-call red); dropping the handle comparison in the callback (the
-parallel-clients case red, if the plan includes one); restoring the reopen (no-new-session
+setting the thread-local after `RfcInvoke` instead of before (caught test red); dropping
+the end callback's clearing, and separately the start callback's clearing for a call
+given no passport (each its own callback case red); dropping the handle comparison in the
+callback (the other-handle callback case red); restoring the reopen (no-new-session
 red); returning success instead of the call's error (error-as-it-came red); leaving the
 handle set on an error of the set (`alive` red); TS passing options always (unit red); letting an empty `Buffer` through (unit red);
 dropping `RFC_CLOSED` from the set (`endsConnection` test red); dropping the leading

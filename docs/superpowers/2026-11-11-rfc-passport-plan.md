@@ -133,8 +133,10 @@ the session's trailers; nothing is pushed until the controller says so.
    placed — nothing written into the buffer, the length left as given, "not placed"
    reported.
 2. Live cases written first (run in step 9): caught with the debuggee passport; not caught
-   without it; not caught with a passport for other ids; the next call on the same client
-   without a passport not caught by a second listener for the same ids; the 289-declared
+   without it; not caught with a passport for other ids; after the caught run and the
+   caller's `resetServerContext()`, the next call on the same client without a passport not
+   caught by a second listener for the same ids (spec 3.2, "What the system keeps"); the
+   289-declared
    passport rejected with the `TypeError` and no run; a self-consistent 65,535-byte passport
    on a call taking the ADT lock of the test's class rejects with the library error naming
    both lengths, a second connection's lock is refused (the call ran, its effect remains),
@@ -146,11 +148,23 @@ the session's trailers; nothing is pushed until the controller says so.
    through the placement decision; after `RfcInvoke`, when it answered `RFC_OK` and the
    passport was not placed, the call rejects with the library error of spec 3.2 and no
    result; when `RfcInvoke` failed, its own error as it came.
-4. Mutations: set the thread-local after `RfcInvoke` (caught red); never clear it
-   (only-its-own-call red); drop the handle comparison in the callback (recorded: covered
-   by code reading, as no single-process case provokes a foreign handle on the same
-   thread); place a passport larger than the size (placement case red); return the result
-   instead of the library error when not placed (oversized live case red).
+4. Mutations: set the thread-local after `RfcInvoke` (caught red); place a passport larger
+   than the size (placement case red); return the result instead of the library error when
+   not placed (oversized live case red).
+
+### 8a. Native: the carried passport is cleared (spec 3.1, 3.2 amended)
+
+1. Native cases (test addon, on the callbacks themselves, exposed by name from
+   `passport.h`): the start callback with no call passport set and 288 offered sets the
+   length to 0 and writes nothing; with the call's passport set and the same handle it
+   places it; with another handle it sets 0; with a passport that does not fit it writes
+   nothing and sets 0; the end callback with 288 sets 0.
+2. Change: the end callback sets `*eppLength` to 0; the start callback sets it to 0 for
+   every call it does not place a passport for.
+3. Mutations, each alone: drop the end callback's clearing (end case red); drop the start
+   callback's clearing (no-passport case red); drop the handle comparison (other-handle
+   case red); drop the clearing on a passport that did not fit (not-fit case red).
+4. The live only-its-own-call case as amended in step 8.2.
 
 ### 9. Live run on the on-premise system over RFC
 
@@ -158,7 +172,10 @@ the session's trailers; nothing is pushed until the controller says so.
    answers `401` with the expected realm, else stop; the session file is the RFC one, read
    by key names only; any credential refusal stops everything.
 2. Build the addon for the running Node and the test addon; run the live suite with
-   `SAP_RFC_LITE_LIVE_ENV` set. It creates its own class in `$TMP`, removes its external
+   `SAP_RFC_LITE_LIVE_ENV` set. The live suite first asserts that the binding it loads is
+   the local build (`build/Release`), not a prebuilt one: a failed `npm run build` removes
+   the local build, and `node-gyp-build` then loads the committed prebuild of an earlier
+   release without a word (observed 2026-11-11). It creates its own class in `$TMP`, removes its external
    breakpoints (listener stop), closes every connection in a `finally`, deletes its class,
    and prints no secret, no ids and no passport bytes.
 3. Every live case green; then the mutations of steps 6 and 8 that are watched live, each
