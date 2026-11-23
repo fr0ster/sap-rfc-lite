@@ -68,7 +68,7 @@ client.call(name, params)          // TypeScript Promise
   → Promise resolves               // TypeScript
 ```
 
-Each Client instance has its own `std::mutex` — multiple clients run in parallel, but operations within one client are serialized.
+Each Client instance has its own invocation hold (a binary semaphore: mutex + condition_variable, released on every completion path) — multiple clients run in parallel, but operations within one client are serialized.
 
 ### Build system (`binding.gyp`)
 
