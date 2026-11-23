@@ -13,6 +13,10 @@ namespace node_rfc {
 
 extern Napi::Env __env;
 
+// Defined only by the test addon (test/native/shim.cc), to read a client's
+// invocation hold; the shipped addon has none.
+struct ClientProbe;
+
 class Client : public Napi::ObjectWrap<Client> {
  public:
   friend class OpenAsync;
@@ -20,6 +24,7 @@ class Client : public Napi::ObjectWrap<Client> {
   friend class ResetServerContextAsync;
   friend class PrepareAsync;
   friend class InvokeAsync;
+  friend struct ClientProbe;
   static Napi::Object Init(Napi::Env env, Napi::Object exports);
   // cppcheck-suppress noExplicitConstructor
   Client(const Napi::CallbackInfo& info);
