@@ -160,11 +160,18 @@ class OwnedFunction {
   RFC_FUNCTION_HANDLE handle = nullptr;
 };
 
-// What a throw while an answer was being built is answered with.
-Napi::Value thrownError(const Napi::Error& e) {
-  return e.Value();
+// What a throw while an answer was being built is answered with: the thrown
+// value when it is an object (an error), else fixed words, so that a thrown
+// null or undefined, which the callback would read as success, never answers
+// a call as done.
+Napi::Value thrownError(const Napi::Error& e, const std::string& operation) {
+  Napi::Value thrown = e.Value();
+  if (thrown.IsObject()) {
+    return thrown;
+  }
+  return nodeRfcError(operation + ": a value that is not an Error was thrown");
 }
-Napi::Value thrownError(const std::exception& e) {
+Napi::Value thrownError(const std::exception& e, const std::string&) {
   return nodeRfcError(e.what());
 }
 
@@ -331,9 +338,9 @@ class InvokeAsync : public HeldWorker {
       try {
         result = answer(function.get());
       } catch (const Napi::Error& e) {
-        result = ValuePair(thrownError(e), Env().Undefined());
+        result = ValuePair(thrownError(e, operation()), Env().Undefined());
       } catch (const std::exception& e) {
-        result = ValuePair(thrownError(e), Env().Undefined());
+        result = ValuePair(thrownError(e, operation()), Env().Undefined());
       }
       function.reset();
     }
@@ -345,6 +352,13 @@ class InvokeAsync : public HeldWorker {
   }
 
  private:
+  // "invoke() <function name>", as the call's errors name it.
+  std::string operation() {
+    return "invoke() " + wrapString(client->errorPath.functionName)
+                             .As<Napi::String>()
+                             .Utf8Value();
+  }
+
   // The call's answer: its error, or its parameters read from the function.
   ValuePair answer(RFC_FUNCTION_HANDLE function) {
     std::string closed_errmsg =
@@ -441,9 +455,9 @@ class PrepareAsync : public HeldWorker {
         return;
       }
     } catch (const Napi::Error& e) {
-      error = thrownError(e);
+      error = thrownError(e, operation());
     } catch (const std::exception& e) {
-      error = thrownError(e);
+      error = thrownError(e, operation());
     }
     // The function handle, if one was created, is destroyed by now.
     Callback().Call({error, Env().Undefined()});
@@ -451,6 +465,13 @@ class PrepareAsync : public HeldWorker {
   }
 
  private:
+  // "invoke() <function name>", as the call's errors name it.
+  std::string operation() {
+    return "invoke() " + wrapString(client->errorPath.functionName)
+                             .As<Napi::String>()
+                             .Utf8Value();
+  }
+
   // Creates the call's function handle into `function` and sets its
   // parameters; answers the error, or undefined when the call can be sent.
   Napi::Value prepare(OwnedFunction& function) {
