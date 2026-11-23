@@ -27,14 +27,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `RfcDestroyFunction` runs on every path; before, it leaked when setting a parameter failed. A
   throw while a call is prepared or its result converted (a `bcd` transformer that throws, for
   one) now rejects that call; before, it left the promise pending and surfaced as an
-  uncaught exception. A worker stays owned until `Queue()` has succeeded, so a `Queue()` that
+  uncaught exception. A thrown value that is not an object (`null`, `undefined`, a string)
+  rejects with fixed words, `invoke() <name>: a value that is not an Error was thrown`, so a
+  throw is never answered as success. A worker stays owned until `Queue()` has succeeded, so a `Queue()` that
   throws leaks nothing.
 
 ### Testing
 
 - `test/invocationHold.test.ts` covers these paths with the shipped `Client` over a fake
-  connection in the test addon (README, "Testing"), and runs again with
-  `UV_THREADPOOL_SIZE=1`. CI builds no C++ (no SDK there), so these cases skip in CI and
+  connection in the test addon (README, "Testing"), in child processes bounded by the
+  runner's timeout, with the default thread pool and with `UV_THREADPOOL_SIZE=1`. CI builds no C++ (no SDK there), so these cases skip in CI and
   run only on a machine with the SDK.
 
 ### Release note
