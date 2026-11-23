@@ -5,6 +5,21 @@ All notable changes to `@mcp-abap-adt/sap-rfc-lite` are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.1] - 2026-11-23
+
+### Fixed
+
+- **The per-client hold is a semaphore, released on every completion path.** One operation at a
+  time per client was a `std::mutex` locked in a worker's `Execute` (a worker thread) and, for
+  `call`, unlocked in `OnOK` (the main thread): unlocking a mutex from a thread that does not
+  own it is undefined behaviour. An `Execute` that threw ended in `OnError`, which unlocked
+  nothing, so that client stayed locked for good. The hold is now a binary semaphore (a mutex,
+  a condition variable and a flag, the mutex locked and unlocked within one function); it is
+  given back in `OnOK` after the result has been read and the function handle destroyed
+  (also when reading the result throws), and in `OnError`. The semantics are unchanged: one
+  operation at a time per client, held from `Execute` until the result has been read.
+  The prebuilt bindings must be built again from these sources (`check:prebuilds`).
+
 ## [0.4.0] - 2026-11-11
 
 ### Added
