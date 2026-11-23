@@ -338,10 +338,9 @@ class HoldWorker : public node_rfc::HeldWorker {
              HoldState* state,
              std::string kind,
              Napi::External<HoldState> stateRef)
-      : node_rfc::HeldWorker(callback, state->hold),
+      : node_rfc::HeldWorker(callback, state->hold, stateRef),
         state(state),
-        kind(std::move(kind)),
-        stateRef(Napi::Persistent(stateRef)) {}
+        kind(std::move(kind)) {}
 
   void Execute() override {
     Hold();
@@ -385,8 +384,6 @@ class HoldWorker : public node_rfc::HeldWorker {
  private:
   HoldState* state;
   std::string kind;
-  // Keeps the hold alive while the worker is queued.
-  Napi::Reference<Napi::External<HoldState>> stateRef;
 };
 
 // heldWork(state, kind, callback(error, { maxHolders, sawWaiter })).
