@@ -44,6 +44,25 @@ interface TestAddon {
     offered: number,
     lengthIn: number,
   ) => { length: number; notPlaced: boolean; buffer: Buffer };
+  /** A fresh per-client invocation hold (test/native/shim.cc). */
+  holdState?: () => HoldState;
+  /** Queues a worker that holds `state` as the client's workers do. */
+  heldWork?: (
+    state: HoldState,
+    kind: 'overlap' | 'plain' | 'throws',
+    callback: (error: unknown, seen?: HoldSeen) => void,
+  ) => void;
+}
+
+/** An opaque handle to one hold. */
+type HoldState = { readonly hold: unique symbol };
+
+/** What the workers on one hold saw. */
+interface HoldSeen {
+  /** The most workers that held it at once. */
+  maxHolders: number;
+  /** Whether a worker found another waiting for the hold while it held it. */
+  sawWaiter: boolean;
 }
 
 // Compiled to .test-build/test/; the repository root is two up.
@@ -170,6 +189,50 @@ describe(title, { skip: !built }, () => {
     });
   });
 
+  describe("the client's invocation hold: one operation at a time, released on every completion", () => {
+    function hold(): HoldState {
+      const make = addon?.holdState;
+      assert.equal(typeof make, 'function', 'the test addon has it');
+      if (!make) throw new Error('no holdState');
+      return make();
+    }
+    function work(
+      state: HoldState,
+      kind: 'overlap' | 'plain' | 'throws',
+    ): Promise<HoldSeen> {
+      const queue = addon?.heldWork;
+      assert.equal(typeof queue, 'function', 'the test addon has it');
+      if (!queue) throw new Error('no heldWork');
+      return new Promise((resolve, reject) => {
+        queue(state, kind, (error, seen) => {
+          if (error) reject(error);
+          else if (seen) resolve(seen);
+          else reject(new Error('the worker answered nothing'));
+        });
+      });
+    }
+
+    it('a second operation on the same hold waits for the first, and both complete', async () => {
+      const state = hold();
+      const [first, second] = await Promise.all([
+        work(state, 'overlap'),
+        work(state, 'overlap'),
+      ]);
+      assert.equal(first.maxHolders, 1, 'never two holders at once');
+      assert.equal(second.maxHolders, 1, 'never two holders at once');
+      assert.equal(second.sawWaiter, true, 'the second one waited');
+    });
+
+    it('an operation whose Execute fails releases the hold: the next one proceeds', async () => {
+      const state = hold();
+      await assert.rejects(work(state, 'throws'), {
+        message: "the test worker's own failure",
+      });
+      const next = await work(state, 'plain');
+      assert.equal(next.maxHolders, 1);
+    });
+  });
+
   describe('the placement of a passport into the buffer the SDK offers', () => {
     function place(passport: Buffer, offered: number) {
       const decide = addon?.placePassport;
@@ -274,5 +337,16 @@ describe(shippedTitle, { skip: !shippedBuilt }, () => {
       client.call('STFC_CONNECTION', {}, { passport: debuggeePassport() }),
       closedConnection,
     );
+  });
+
+  it('overlapping calls on one client all answer, one after another', async () => {
+    const lib: typeof import('../src/ts/index') = require(
+      path.join(__dirname, '..', '..', 'lib', 'index.js'),
+    );
+    const client = new lib.Client({ ashost: '127.0.0.1', sysnr: '00' });
+    const calls = Array.from({ length: 8 }, () =>
+      assert.rejects(client.call('STFC_CONNECTION'), closedConnection),
+    );
+    await Promise.all(calls);
   });
 });

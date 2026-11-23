@@ -6,10 +6,14 @@
 // numbers by name. Nothing here is shipped.
 
 #include "connectionEnd.h"
+#include "invocationHold.h"
 #include "nwrfcsdk.h"
 #include "passport.h"
 
+#include <atomic>
+#include <stdexcept>
 #include <string>
+#include <thread>
 #include <vector>
 
 namespace node_rfc {
@@ -132,6 +136,97 @@ Napi::Value CallbackView(const Napi::CallbackInfo& info) {
   return result;
 }
 
+// One client's hold, and what the workers on it saw.
+struct HoldState {
+  node_rfc::InvocationHold hold;
+  std::atomic<int> holders{0};
+  std::atomic<int> maxHolders{0};
+  std::atomic<int> entered{0};
+  std::atomic<bool> sawWaiter{false};
+};
+
+// holdState(): a fresh hold, as one client has.
+Napi::Value NewHoldState(const Napi::CallbackInfo& info) {
+  return Napi::External<HoldState>::New(
+      info.Env(), new HoldState(), [](Napi::Env, HoldState* state) {
+        delete state;
+      });
+}
+
+// A worker that holds the hold as the client's workers do: Hold() in
+// Execute, Release() in OnOK (after its result), and HeldWorker's OnError.
+//   'overlap': once held, waits until another worker is waiting for the hold
+//     (it did wait) or has entered too (it did not: an overlap); yields, never
+//     sleeps. Two of them must be queued at once (the default thread pool).
+//   'plain': holds and gives back.
+//   'throws': holds, then Execute throws, so the worker ends in OnError.
+class HoldWorker : public node_rfc::HeldWorker {
+ public:
+  HoldWorker(Napi::Function& callback,
+             HoldState* state,
+             std::string kind,
+             Napi::External<HoldState> stateRef)
+      : node_rfc::HeldWorker(callback, state->hold),
+        state(state),
+        kind(std::move(kind)),
+        stateRef(Napi::Persistent(stateRef)) {}
+
+  void Execute() override {
+    Hold();
+    int now = ++state->holders;
+    int seen = state->maxHolders.load();
+    while (now > seen && !state->maxHolders.compare_exchange_weak(seen, now)) {
+    }
+    ++state->entered;
+    if (kind == "throws") {
+      throw std::runtime_error("the test worker's own failure");
+    }
+    if (kind == "overlap") {
+      while (true) {
+        if (state->hold.waiting() > 0) {
+          state->sawWaiter = true;
+          break;
+        }
+        if (state->entered.load() >= 2) {
+          break;
+        }
+        std::this_thread::yield();
+      }
+    }
+  }
+
+  void OnOK() override {
+    --state->holders;
+    Release();
+    Napi::Env env = Env();
+    Napi::Object result = Napi::Object::New(env);
+    result.Set("maxHolders", static_cast<double>(state->maxHolders.load()));
+    result.Set("sawWaiter", state->sawWaiter.load());
+    Callback().Call({env.Null(), result});
+  }
+
+  void OnError(const Napi::Error& e) override {
+    --state->holders;
+    node_rfc::HeldWorker::OnError(e);
+  }
+
+ private:
+  HoldState* state;
+  std::string kind;
+  // Keeps the hold alive while the worker is queued.
+  Napi::Reference<Napi::External<HoldState>> stateRef;
+};
+
+// heldWork(state, kind, callback(error, { maxHolders, sawWaiter })).
+Napi::Value HeldWork(const Napi::CallbackInfo& info) {
+  Napi::External<HoldState> stateObject = info[0].As<Napi::External<HoldState>>();
+  HoldState* state = stateObject.Data();
+  std::string kind = info[1].As<Napi::String>().Utf8Value();
+  Napi::Function callback = info[2].As<Napi::Function>();
+  (new HoldWorker(callback, state, kind, stateObject))->Queue();
+  return info.Env().Undefined();
+}
+
 Napi::Object Init(Napi::Env env, Napi::Object exports) {
   node_rfc::__env = env;
   exports.Set("codes", Codes(env));
@@ -141,6 +236,8 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
               Napi::Function::New(env, PassportCallAnswer));
   exports.Set("placePassport", Napi::Function::New(env, PlacePassport));
   exports.Set("callbackView", Napi::Function::New(env, CallbackView));
+  exports.Set("holdState", Napi::Function::New(env, NewHoldState));
+  exports.Set("heldWork", Napi::Function::New(env, HeldWork));
   return exports;
 }
 
