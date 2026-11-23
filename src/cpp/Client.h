@@ -6,6 +6,7 @@
 #ifndef NodeRfc_Client_H
 #define NodeRfc_Client_H
 
+#include "invocationHold.h"
 #include "nwrfcsdk.h"
 
 namespace node_rfc {
@@ -50,16 +51,14 @@ class Client : public Napi::ObjectWrap<Client> {
   };
 
   static uint_t _id;
-  std::mutex invocationMutex;
+  // One operation at a time on this client; see invocationHold.h.
+  InvocationHold invocationHold;
 
   uint_t id;
   RFC_CONNECTION_HANDLE connectionHandle;
 
   ConnectionParamsStruct client_params = ConnectionParamsStruct(0, nullptr);
   ClientOptionsStruct client_options;
-
-  void LockMutex();
-  void UnlockMutex();
 };
 
 }  // namespace node_rfc

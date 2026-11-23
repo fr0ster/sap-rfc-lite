@@ -6,7 +6,6 @@
 #include "Client.h"
 #include "connectionEnd.h"
 #include "passport.h"
-#include <mutex>
 #include <thread>
 #include <tuple>
 
@@ -28,7 +27,7 @@ Napi::Value Client::getOperationError(bool conn_closed,
   return scope.Escape(error);
 }
 
-// Called under the client's mutex, on the worker thread, right after an
+// Called under the client's invocation hold, on the worker thread, right after an
 // operation on the open handle failed. On an error that leaves the connection
 // unusable (endsConnection) the handle is closed once and released: `alive`
 // turns false and every later operation answers the closed-connection error
@@ -126,15 +125,15 @@ Napi::Value Client::connectionClosedError(const char* suffix) {
                       std::string(suffix));
 }
 
-class OpenAsync : public Napi::AsyncWorker {
+class OpenAsync : public HeldWorker {
  public:
   OpenAsync(Napi::Function& callback, Client* client)
-      : Napi::AsyncWorker(callback), client(client) {}
+      : HeldWorker(callback, client->invocationHold), client(client) {}
   ~OpenAsync() {}
 
   // cppcheck-suppress unusedFunction
   void Execute() {
-    client->LockMutex();
+    Hold();
     client->connectionHandle =
         RfcOpenConnection(client->client_params.connectionParams,
                           client->client_params.paramSize,
@@ -142,7 +141,7 @@ class OpenAsync : public Napi::AsyncWorker {
     if (errorInfo.code != RFC_OK) {
       client->connectionHandle = nullptr;
     }
-    client->UnlockMutex();
+    Release();
   }
 
   // cppcheck-suppress unusedFunction
@@ -160,20 +159,20 @@ class OpenAsync : public Napi::AsyncWorker {
   RFC_ERROR_INFO errorInfo;
 };
 
-class CloseAsync : public Napi::AsyncWorker {
+class CloseAsync : public HeldWorker {
  public:
   CloseAsync(Napi::Function& callback, Client* client)
-      : Napi::AsyncWorker(callback), client(client) {}
+      : HeldWorker(callback, client->invocationHold), client(client) {}
   ~CloseAsync() {}
 
   void Execute() {
-    client->LockMutex();
+    Hold();
     conn_closed = (client->connectionHandle == nullptr);
     if (!conn_closed) {
       RfcCloseConnection(client->connectionHandle, &errorInfo);
       client->connectionHandle = nullptr;
     }
-    client->UnlockMutex();
+    Release();
   }
 
   void OnOK() {
@@ -198,14 +197,14 @@ class CloseAsync : public Napi::AsyncWorker {
 // RfcResetServerContext: ends the ABAP session context ("user context") the
 // connection holds and keeps the connection open, so the next call runs in a
 // fresh context without a new logon.
-class ResetServerContextAsync : public Napi::AsyncWorker {
+class ResetServerContextAsync : public HeldWorker {
  public:
   ResetServerContextAsync(Napi::Function& callback, Client* client)
-      : Napi::AsyncWorker(callback), client(client) {}
+      : HeldWorker(callback, client->invocationHold), client(client) {}
   ~ResetServerContextAsync() {}
 
   void Execute() {
-    client->LockMutex();
+    Hold();
     conn_closed = (client->connectionHandle == nullptr);
     if (!conn_closed) {
       RfcResetServerContext(client->connectionHandle, &errorInfo);
@@ -213,7 +212,7 @@ class ResetServerContextAsync : public Napi::AsyncWorker {
         client->releaseIfEnded(errorInfo);
       }
     }
-    client->UnlockMutex();
+    Release();
   }
 
   void OnOK() {
@@ -234,7 +233,7 @@ class ResetServerContextAsync : public Napi::AsyncWorker {
   bool conn_closed = false;
 };
 
-class InvokeAsync : public Napi::AsyncWorker {
+class InvokeAsync : public HeldWorker {
  public:
   InvokeAsync(Napi::Function& callback,
               Client* client,
@@ -242,7 +241,7 @@ class InvokeAsync : public Napi::AsyncWorker {
               RFC_FUNCTION_DESC_HANDLE functionDescHandle,
               bool hasPassport,
               std::vector<unsigned char> passport)
-      : Napi::AsyncWorker(callback),
+      : HeldWorker(callback, client->invocationHold),
         client(client),
         functionHandle(functionHandle),
         functionDescHandle(functionDescHandle),
@@ -251,7 +250,7 @@ class InvokeAsync : public Napi::AsyncWorker {
   ~InvokeAsync() {}
 
   void Execute() {
-    client->LockMutex();
+    Hold();
     conn_closed = (client->connectionHandle == nullptr);
     if (!conn_closed) {
       // The passport reaches this call only: set for this thread and handle
@@ -269,40 +268,49 @@ class InvokeAsync : public Napi::AsyncWorker {
   void OnOK() {
     Napi::HandleScope scope(Env());
 
-    std::string closed_errmsg =
-        "invoke() " + wrapString(client->errorPath.functionName)
-                          .As<Napi::String>()
-                          .Utf8Value();
-    ValuePair result =
-        ValuePair(client->getOperationError(conn_closed,
-                                            closed_errmsg.c_str(),
-                                            &errorInfo,
-                                            Env()),
-                  Env().Undefined());
+    // Gives the hold back when this block ends: after the result is read and
+    // the function handle destroyed, or on a throw while reading it.
+    struct ReleaseAtEnd {
+      InvokeAsync* worker;
+      ~ReleaseAtEnd() { worker->Release(); }
+    };
+    ValuePair result;
+    {
+      ReleaseAtEnd releaseAtEnd{this};
+      std::string closed_errmsg =
+          "invoke() " + wrapString(client->errorPath.functionName)
+                            .As<Napi::String>()
+                            .Utf8Value();
+      result =
+          ValuePair(client->getOperationError(conn_closed,
+                                              closed_errmsg.c_str(),
+                                              &errorInfo,
+                                              Env()),
+                    Env().Undefined());
 
-    if (result.first.IsUndefined() && passportOutcome.notPlaced) {
-      // The call ran on the system without its passport, which did not fit
-      // the buffer the SDK offered; what the call did there remains. Its
-      // result is not returned.
-      result.first = nodeRfcError(
-          "invoke() " +
-          wrapString(client->errorPath.functionName)
-              .As<Napi::String>()
-              .Utf8Value() +
-          ": the call ran without the passport, which is " +
-          std::to_string(passport.size()) + " bytes, longer than the " +
-          std::to_string(passportOutcome.offered) +
-          " bytes the SDK offered for it; what the call did in the system "
-          "remains");
-    } else if (result.first.IsUndefined()) {
-      result = getRfmParameters(functionDescHandle,
-                                functionHandle,
-                                &client->errorPath,
-                                &client->client_options);
+      if (result.first.IsUndefined() && passportOutcome.notPlaced) {
+        // The call ran on the system without its passport, which did not fit
+        // the buffer the SDK offered; what the call did there remains. Its
+        // result is not returned.
+        result.first = nodeRfcError(
+            "invoke() " +
+            wrapString(client->errorPath.functionName)
+                .As<Napi::String>()
+                .Utf8Value() +
+            ": the call ran without the passport, which is " +
+            std::to_string(passport.size()) + " bytes, longer than the " +
+            std::to_string(passportOutcome.offered) +
+            " bytes the SDK offered for it; what the call did in the system "
+            "remains");
+      } else if (result.first.IsUndefined()) {
+        result = getRfmParameters(functionDescHandle,
+                                  functionHandle,
+                                  &client->errorPath,
+                                  &client->client_options);
+      }
+
+      RfcDestroyFunction(functionHandle, nullptr);
     }
-
-    RfcDestroyFunction(functionHandle, nullptr);
-    client->UnlockMutex();
 
     Callback().Call({result.first, result.second});
     Callback().Reset();
@@ -319,7 +327,7 @@ class InvokeAsync : public Napi::AsyncWorker {
   PassportOutcome passportOutcome;
 };
 
-class PrepareAsync : public Napi::AsyncWorker {
+class PrepareAsync : public HeldWorker {
  public:
   PrepareAsync(Napi::Function& callback,
                Client* client,
@@ -328,7 +336,7 @@ class PrepareAsync : public Napi::AsyncWorker {
                Napi::Object& rfmParams,
                bool hasPassport,
                std::vector<unsigned char> passport)
-      : Napi::AsyncWorker(callback),
+      : HeldWorker(callback, client->invocationHold),
         client(client),
         notRequested(Napi::Persistent(notRequestedParameters)),
         rfmParams(Napi::Persistent(rfmParams)),
@@ -340,7 +348,7 @@ class PrepareAsync : public Napi::AsyncWorker {
   ~PrepareAsync() { delete[] funcName; }
 
   void Execute() {
-    client->LockMutex();
+    Hold();
     conn_closed = (client->connectionHandle == nullptr);
     if (!conn_closed) {
       functionDescHandle =
@@ -352,7 +360,7 @@ class PrepareAsync : public Napi::AsyncWorker {
   }
 
   void OnOK() {
-    client->UnlockMutex();
+    Release();
     RFC_FUNCTION_HANDLE functionHandle = nullptr;
     Napi::Value argv[2] = {Env().Undefined(), Env().Undefined()};
 
@@ -552,14 +560,6 @@ Napi::Value Client::Invoke(const Napi::CallbackInfo& info) {
       ->Queue();
 
   return info.Env().Undefined();
-}
-
-void Client::LockMutex() {
-  invocationMutex.lock();
-}
-
-void Client::UnlockMutex() {
-  invocationMutex.unlock();
 }
 
 }  // namespace node_rfc
