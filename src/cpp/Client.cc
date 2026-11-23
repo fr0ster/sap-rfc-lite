@@ -6,6 +6,7 @@
 #include "Client.h"
 #include "connectionEnd.h"
 #include "passport.h"
+#include <memory>
 #include <thread>
 #include <tuple>
 
@@ -125,10 +126,60 @@ Napi::Value Client::connectionClosedError(const char* suffix) {
                       std::string(suffix));
 }
 
+// Owns an RFC function handle: RfcDestroyFunction runs exactly once, on every
+// path, when the owner is reset or destroyed. Moved from PrepareAsync into
+// InvokeAsync.
+class OwnedFunction {
+ public:
+  OwnedFunction() = default;
+  explicit OwnedFunction(RFC_FUNCTION_HANDLE handle) : handle(handle) {}
+  OwnedFunction(OwnedFunction&& other) noexcept : handle(other.handle) {
+    other.handle = nullptr;
+  }
+  OwnedFunction& operator=(OwnedFunction&& other) noexcept {
+    if (this != &other) {
+      reset();
+      handle = other.handle;
+      other.handle = nullptr;
+    }
+    return *this;
+  }
+  OwnedFunction(const OwnedFunction&) = delete;
+  OwnedFunction& operator=(const OwnedFunction&) = delete;
+  ~OwnedFunction() { reset(); }
+
+  RFC_FUNCTION_HANDLE get() const { return handle; }
+  void reset() {
+    if (handle != nullptr) {
+      RfcDestroyFunction(handle, nullptr);
+      handle = nullptr;
+    }
+  }
+
+ private:
+  RFC_FUNCTION_HANDLE handle = nullptr;
+};
+
+// What a throw while an answer was being built is answered with.
+Napi::Value thrownError(const Napi::Error& e) {
+  return e.Value();
+}
+Napi::Value thrownError(const std::exception& e) {
+  return nodeRfcError(e.what());
+}
+
+// Queues a worker; the caller keeps ownership until Queue() has succeeded, so
+// a Queue() that throws leaks nothing.
+template <typename Worker>
+void queueOwned(std::unique_ptr<Worker> worker) {
+  worker->Queue();
+  worker.release();
+}
+
 class OpenAsync : public HeldWorker {
  public:
   OpenAsync(Napi::Function& callback, Client* client)
-      : HeldWorker(callback, client->invocationHold), client(client) {}
+      : HeldWorker(callback, client->invocationHold, client->Value()), client(client) {}
   ~OpenAsync() {}
 
   // cppcheck-suppress unusedFunction
@@ -162,7 +213,7 @@ class OpenAsync : public HeldWorker {
 class CloseAsync : public HeldWorker {
  public:
   CloseAsync(Napi::Function& callback, Client* client)
-      : HeldWorker(callback, client->invocationHold), client(client) {}
+      : HeldWorker(callback, client->invocationHold, client->Value()), client(client) {}
   ~CloseAsync() {}
 
   void Execute() {
@@ -200,7 +251,7 @@ class CloseAsync : public HeldWorker {
 class ResetServerContextAsync : public HeldWorker {
  public:
   ResetServerContextAsync(Napi::Function& callback, Client* client)
-      : HeldWorker(callback, client->invocationHold), client(client) {}
+      : HeldWorker(callback, client->invocationHold, client->Value()), client(client) {}
   ~ResetServerContextAsync() {}
 
   void Execute() {
@@ -237,13 +288,13 @@ class InvokeAsync : public HeldWorker {
  public:
   InvokeAsync(Napi::Function& callback,
               Client* client,
-              RFC_FUNCTION_HANDLE functionHandle,
+              OwnedFunction functionHandle,
               RFC_FUNCTION_DESC_HANDLE functionDescHandle,
               bool hasPassport,
               std::vector<unsigned char> passport)
-      : HeldWorker(callback, client->invocationHold),
+      : HeldWorker(callback, client->invocationHold, client->Value()),
         client(client),
-        functionHandle(functionHandle),
+        functionHandle(std::move(functionHandle)),
         functionDescHandle(functionDescHandle),
         hasPassport(hasPassport),
         passport(std::move(passport)) {}
@@ -257,7 +308,7 @@ class InvokeAsync : public HeldWorker {
       // immediately before RfcInvoke, cleared immediately after it.
       beginCallPassport(hasPassport ? &passport : nullptr,
                         client->connectionHandle);
-      RfcInvoke(client->connectionHandle, functionHandle, &errorInfo);
+      RfcInvoke(client->connectionHandle, functionHandle.get(), &errorInfo);
       passportOutcome = endCallPassport();
       if (errorInfo.code != RFC_OK) {
         client->releaseIfEnded(errorInfo);
@@ -266,59 +317,72 @@ class InvokeAsync : public HeldWorker {
   }
 
   void OnOK() {
+    // Gives the hold back if anything below throws; installed before any
+    // completion work, the HandleScope included.
+    struct ReleaseOnThrow {
+      InvokeAsync* worker;
+      ~ReleaseOnThrow() { worker->Release(); }
+    } releaseOnThrow{this};
     Napi::HandleScope scope(Env());
 
-    // Gives the hold back when this block ends: after the result is read and
-    // the function handle destroyed, or on a throw while reading it.
-    struct ReleaseAtEnd {
-      InvokeAsync* worker;
-      ~ReleaseAtEnd() { worker->Release(); }
-    };
-    ValuePair result;
+    ValuePair result(Env().Undefined(), Env().Undefined());
     {
-      ReleaseAtEnd releaseAtEnd{this};
-      std::string closed_errmsg =
-          "invoke() " + wrapString(client->errorPath.functionName)
-                            .As<Napi::String>()
-                            .Utf8Value();
-      result =
-          ValuePair(client->getOperationError(conn_closed,
-                                              closed_errmsg.c_str(),
-                                              &errorInfo,
-                                              Env()),
-                    Env().Undefined());
-
-      if (result.first.IsUndefined() && passportOutcome.notPlaced) {
-        // The call ran on the system without its passport, which did not fit
-        // the buffer the SDK offered; what the call did there remains. Its
-        // result is not returned.
-        result.first = nodeRfcError(
-            "invoke() " +
-            wrapString(client->errorPath.functionName)
-                .As<Napi::String>()
-                .Utf8Value() +
-            ": the call ran without the passport, which is " +
-            std::to_string(passport.size()) + " bytes, longer than the " +
-            std::to_string(passportOutcome.offered) +
-            " bytes the SDK offered for it; what the call did in the system "
-            "remains");
-      } else if (result.first.IsUndefined()) {
-        result = getRfmParameters(functionDescHandle,
-                                  functionHandle,
-                                  &client->errorPath,
-                                  &client->client_options);
+      OwnedFunction function = std::move(functionHandle);
+      try {
+        result = answer(function.get());
+      } catch (const Napi::Error& e) {
+        result = ValuePair(thrownError(e), Env().Undefined());
+      } catch (const std::exception& e) {
+        result = ValuePair(thrownError(e), Env().Undefined());
       }
-
-      RfcDestroyFunction(functionHandle, nullptr);
+      function.reset();
     }
+    // After the result has been read and the function handle destroyed.
+    Release();
 
     Callback().Call({result.first, result.second});
     Callback().Reset();
   }
 
  private:
+  // The call's answer: its error, or its parameters read from the function.
+  ValuePair answer(RFC_FUNCTION_HANDLE function) {
+    std::string closed_errmsg =
+        "invoke() " + wrapString(client->errorPath.functionName)
+                          .As<Napi::String>()
+                          .Utf8Value();
+    ValuePair result =
+        ValuePair(client->getOperationError(conn_closed,
+                                            closed_errmsg.c_str(),
+                                            &errorInfo,
+                                            Env()),
+                  Env().Undefined());
+
+    if (result.first.IsUndefined() && passportOutcome.notPlaced) {
+      // The call ran on the system without its passport, which did not fit
+      // the buffer the SDK offered; what the call did there remains. Its
+      // result is not returned.
+      result.first = nodeRfcError(
+          "invoke() " +
+          wrapString(client->errorPath.functionName)
+              .As<Napi::String>()
+              .Utf8Value() +
+          ": the call ran without the passport, which is " +
+          std::to_string(passport.size()) + " bytes, longer than the " +
+          std::to_string(passportOutcome.offered) +
+          " bytes the SDK offered for it; what the call did in the system "
+          "remains");
+    } else if (result.first.IsUndefined()) {
+      result = getRfmParameters(functionDescHandle,
+                                function,
+                                &client->errorPath,
+                                &client->client_options);
+    }
+    return result;
+  }
+
   Client* client;
-  RFC_FUNCTION_HANDLE functionHandle;
+  OwnedFunction functionHandle;
   RFC_FUNCTION_DESC_HANDLE functionDescHandle;
   RFC_ERROR_INFO errorInfo;
   bool conn_closed = false;
@@ -336,7 +400,7 @@ class PrepareAsync : public HeldWorker {
                Napi::Object& rfmParams,
                bool hasPassport,
                std::vector<unsigned char> passport)
-      : HeldWorker(callback, client->invocationHold),
+      : HeldWorker(callback, client->invocationHold, client->Value()),
         client(client),
         notRequested(Napi::Persistent(notRequestedParameters)),
         rfmParams(Napi::Persistent(rfmParams)),
@@ -361,7 +425,35 @@ class PrepareAsync : public HeldWorker {
 
   void OnOK() {
     Release();
-    RFC_FUNCTION_HANDLE functionHandle = nullptr;
+    Napi::HandleScope scope(Env());
+    Napi::Value error = Env().Undefined();
+    try {
+      OwnedFunction function;
+      error = prepare(function);
+      if (error.IsUndefined()) {
+        Napi::Function callbackFunction = Callback().Value();
+        queueOwned(std::make_unique<InvokeAsync>(callbackFunction,
+                                                 client,
+                                                 std::move(function),
+                                                 functionDescHandle,
+                                                 hasPassport,
+                                                 std::move(passport)));
+        return;
+      }
+    } catch (const Napi::Error& e) {
+      error = thrownError(e);
+    } catch (const std::exception& e) {
+      error = thrownError(e);
+    }
+    // The function handle, if one was created, is destroyed by now.
+    Callback().Call({error, Env().Undefined()});
+    Callback().Reset();
+  }
+
+ private:
+  // Creates the call's function handle into `function` and sets its
+  // parameters; answers the error, or undefined when the call can be sent.
+  Napi::Value prepare(OwnedFunction& function) {
     Napi::Value argv[2] = {Env().Undefined(), Env().Undefined()};
 
     if (conn_closed) {
@@ -374,7 +466,7 @@ class PrepareAsync : public HeldWorker {
       argv[0] = rfcSdkError(&errorInfo);
     } else {
       // function descriptor handle created, proceed with function handle
-      functionHandle = RfcCreateFunction(functionDescHandle, &errorInfo);
+      function = OwnedFunction(RfcCreateFunction(functionDescHandle, &errorInfo));
 
       if (errorInfo.code != RFC_OK) {
         argv[0] = rfcSdkError(&errorInfo);
@@ -383,7 +475,7 @@ class PrepareAsync : public HeldWorker {
           Napi::String name = notRequested.Value().Get(i).ToString();
           SAP_UC* paramName = setString(name);
           RFC_RC rc =
-              RfcSetParameterActive(functionHandle, paramName, 0, &errorInfo);
+              RfcSetParameterActive(function.get(), paramName, 0, &errorInfo);
           delete[] paramName;
           if (rc != RFC_OK) {
             argv[0] = rfcSdkError(&errorInfo);
@@ -404,7 +496,7 @@ class PrepareAsync : public HeldWorker {
         Napi::String name = paramNames.Get(i).ToString();
         Napi::Value value = params.Get(name);
         argv[0] = setRfmParameter(functionDescHandle,
-                                  functionHandle,
+                                  function.get(),
                                   name,
                                   value,
                                   &client->errorPath,
@@ -417,23 +509,9 @@ class PrepareAsync : public HeldWorker {
     }
 
     rfmParams.Reset();
-
-    if (argv[0].IsUndefined()) {
-      Napi::Function callbackFunction = Callback().Value().As<Napi::Function>();
-      (new InvokeAsync(callbackFunction,
-                       client,
-                       functionHandle,
-                       functionDescHandle,
-                       hasPassport,
-                       std::move(passport)))
-          ->Queue();
-    } else {
-      Callback().Call({argv[0], argv[1]});
-      Callback().Reset();
-    }
+    return argv[0];
   }
 
- private:
   Client* client;
   SAP_UC* funcName;
 
@@ -457,7 +535,7 @@ Napi::Value Client::Open(const Napi::CallbackInfo& info) {
 
   Napi::Function callback = info[0].As<Napi::Function>();
 
-  (new OpenAsync(callback, this))->Queue();
+  queueOwned(std::make_unique<OpenAsync>(callback, this));
 
   return info.Env().Undefined();
 }
@@ -472,7 +550,7 @@ Napi::Value Client::Close(const Napi::CallbackInfo& info) {
 
   Napi::Function callback = info[0].As<Napi::Function>();
 
-  (new CloseAsync(callback, this))->Queue();
+  queueOwned(std::make_unique<CloseAsync>(callback, this));
 
   return info.Env().Undefined();
 }
@@ -485,7 +563,7 @@ Napi::Value Client::ResetServerContext(const Napi::CallbackInfo& info) {
     return info.Env().Undefined();
   }
   Napi::Function callback = info[0].As<Napi::Function>();
-  (new ResetServerContextAsync(callback, this))->Queue();
+  queueOwned(std::make_unique<ResetServerContextAsync>(callback, this));
   return info.Env().Undefined();
 }
 
@@ -550,14 +628,13 @@ Napi::Value Client::Invoke(const Napi::CallbackInfo& info) {
   Napi::String rfmName = info[0].As<Napi::String>();
   Napi::Object rfmParams = info[1].As<Napi::Object>();
 
-  (new PrepareAsync(callback,
-                    this,
-                    rfmName,
-                    notRequested,
-                    rfmParams,
-                    hasPassport,
-                    std::move(passport)))
-      ->Queue();
+  queueOwned(std::make_unique<PrepareAsync>(callback,
+                                            this,
+                                            rfmName,
+                                            notRequested,
+                                            rfmParams,
+                                            hasPassport,
+                                            std::move(passport)));
 
   return info.Env().Undefined();
 }
