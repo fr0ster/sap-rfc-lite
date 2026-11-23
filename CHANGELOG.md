@@ -5,6 +5,44 @@ All notable changes to `@mcp-abap-adt/sap-rfc-lite` are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.1] - 2026-11-23
+
+### Fixed
+
+- **The per-client hold is a semaphore, released on every completion path.** One operation at a
+  time per client was a `std::mutex` locked in a worker's `Execute` (a worker thread) and, for
+  `call`, unlocked in `OnOK` (the main thread): unlocking a mutex from a thread that does not
+  own it is undefined behaviour. An `Execute` that threw ended in `OnError`, which unlocked
+  nothing, so that client stayed locked for good. The hold is now a binary semaphore (a mutex,
+  a condition variable and a flag, the mutex locked and unlocked within one function); it is
+  given back in `OnOK` after the result has been read and the function handle destroyed
+  (also when reading the result throws), and in `OnError`. The semantics are unchanged: one
+  operation at a time per client, held from `Execute` until the result has been read.
+- **A client is not collected while its operations run.** Every worker keeps a strong reference
+  to its client's JS object for its whole lifetime, including the hand-over from preparing a
+  call to invoking it. Before, a native client the caller had dropped could be collected
+  while a call was queued or waiting, and the worker then used freed memory.
+- **An exceptional completion answers and frees.** The release guard is installed before any
+  completion work, the `HandleScope` included. The RFC function handle has an owner, so
+  `RfcDestroyFunction` runs on every path; before, it leaked when setting a parameter failed. A
+  throw while a call is prepared or its result converted (a `bcd` transformer that throws, for
+  one) now rejects that call; before, it left the promise pending and surfaced as an
+  uncaught exception. A thrown value that is not an object (`null`, `undefined`, a string)
+  rejects with fixed words, `invoke() <name>: a value that is not an Error was thrown`, so a
+  throw is never answered as success. A worker stays owned until `Queue()` has succeeded, so a `Queue()` that
+  throws leaks nothing.
+
+### Testing
+
+- `test/invocationHold.test.ts` covers these paths with the shipped `Client` over a fake
+  connection in the test addon (README, "Testing"), in child processes bounded by the
+  runner's timeout, with the default thread pool and with `UV_THREADPOOL_SIZE=1`. CI builds no C++ (no SDK there), so these cases skip in CI and
+  run only on a machine with the SDK.
+
+### Release note
+
+- The prebuilt bindings must be built again from these sources (`check:prebuilds`).
+
 ## [0.4.0] - 2026-11-11
 
 ### Added

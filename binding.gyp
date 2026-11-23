@@ -93,6 +93,7 @@
                 'src/cpp/Client.cc',
                 'src/cpp/connectionEnd.cc',
                 'src/cpp/passport.cc',
+                'src/cpp/invocationHold.cc',
             ],
             'defines': [
                 '_CONSOLE',

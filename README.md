@@ -146,6 +146,16 @@ npm worms such as Shai-Hulud spread through dependency install scripts (`preinst
 - **CI fails on a known advisory.** `npm audit --audit-level=moderate` runs in CI and in the release workflow, dev dependencies included.
 - **Tools run through npm scripts** (`npm run lint:check`, `npm run typecheck`), never `npx`, which fetches a package from the registry when it is not installed.
 
+## Testing (contributors)
+
+`npm test` compiles the tests and runs them on `node:test`. Three groups need something more, and skip without it, each naming its reason in its title:
+
+- **The native cases** need the test addon: `npm run build:test-native`, with `SAPNWRFC_HOME` set to the SDK (and the SDK libraries loadable, see [Runtime library loading](#runtime-library-loading)). The addon compiles the C++ sources with a shim (`test/native/shim.cc`). It runs the pure decisions, and, on Linux and macOS, the shipped `Client` over a fake connection: the SDK calls that need a system (`RfcOpenConnection`, `RfcGetFunctionDesc`, `RfcInvoke`, `RfcCloseConnection`, `RfcResetServerContext`) are the shim's, everything else is the real SDK. `test/invocationHold.test.ts` uses the fake connection to cover the per-client invocation hold: overlapping calls through `InvokeAsync`, an `Execute` that throws, a throw while a result is converted (also a thrown `null` or `undefined`), function handles destroyed on every path, and a client dropped while its call runs. These cases hang if the hold is not released, so they run only in child processes of that file, once with the default thread pool and once with `UV_THREADPOOL_SIZE=1`. Each child is bounded by its parent test's `node:test` timeout, whose abort kills it, and each case inside has its own timeout. The library itself has no timeout.
+- **The shipped-addon cases** need `npm run build`.
+- **The live cases** need `SAP_RFC_LITE_LIVE_ENV` and a system.
+
+**CI builds no C++**: it has no SAP NW RFC SDK, which cannot be installed there. In CI the native cases, the invocation-hold cases among them, skip. They run only on a machine with the SDK, so run `npm run build:test-native && npm test` there before a change to `src/cpp/` is merged.
+
 ## Usage
 
 ```typescript
