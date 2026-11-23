@@ -38,11 +38,14 @@ class InvocationHold {
 // An AsyncWorker that holds its client's InvocationHold. Hold() is called on
 // the worker thread; Release() gives it back once, if this worker holds it,
 // on whichever thread its operation ends. An Execute that throws ends in
-// OnError, which releases: the client is never left held.
+// OnError, which releases: the client is never left held. The worker keeps a
+// strong reference to the JS object that owns the hold (the client) for its
+// whole lifetime, so the owner, and the hold in it, cannot be collected while
+// the worker is queued, waiting or running.
 class HeldWorker : public Napi::AsyncWorker {
  protected:
-  HeldWorker(Napi::Function& callback, InvocationHold& hold)
-      : Napi::AsyncWorker(callback), hold(hold) {}
+  HeldWorker(Napi::Function& callback, InvocationHold& hold, Napi::Value owner)
+      : Napi::AsyncWorker(callback), hold(hold), owner(Napi::Persistent(owner)) {}
 
   void Hold();
   void Release();
@@ -51,6 +54,7 @@ class HeldWorker : public Napi::AsyncWorker {
 
  private:
   InvocationHold& hold;
+  Napi::Reference<Napi::Value> owner;
   bool held = false;
 };
 
