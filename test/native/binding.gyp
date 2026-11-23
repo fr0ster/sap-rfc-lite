@@ -1,7 +1,8 @@
 # The test-only addon (npm run build:test-native). It compiles the addon's pure
 # decisions from src/cpp/ with a small shim (shim.cc) that exposes them to
-# test/native.test.ts. It is never shipped: the root binding.gyp, prebuildify and
-# the packed file list do not see it (test/package.test.ts).
+# test/native.test.ts, and, on Linux and macOS, the Client over a fake
+# connection (shim.cc). It is never shipped: the root binding.gyp, prebuildify
+# and the packed file list do not see it (test/package.test.ts).
 {
     'variables': {
         'nwrfcsdk_dir': "<!(node -e \"process.stdout.write(String(process.env.SAPNWRFC_HOME || process.env.SAPNWRFC_HOME_CLOUD))\")",
@@ -19,6 +20,7 @@
                 '../../src/cpp/connectionEnd.cc',
                 '../../src/cpp/passport.cc',
                 '../../src/cpp/invocationHold.cc',
+                '../../src/cpp/Client.cc',
             ],
             'include_dirs': ['<(napi_include_dir)', '<(nwrfcsdk_dir)/include', '../../src/cpp'],
             'cflags!': ['-fno-exceptions'],
@@ -35,7 +37,7 @@
                     'defines': ['SAPonLIN', 'SAPonUNIX'],
                     'link_settings': {
                         'library_dirs': ['<(nwrfcsdk_dir)/lib'],
-                        'libraries': ['-lsapnwrfc', '-lsapucum', '-Wl,-rpath,<(nwrfcsdk_dir)/lib'],
+                        'libraries': ['-lsapnwrfc', '-lsapucum', '-ldl', '-Wl,-rpath,<(nwrfcsdk_dir)/lib'],
                     },
                 }],
                 ['OS=="mac"', {
