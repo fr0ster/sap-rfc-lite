@@ -212,7 +212,10 @@ describe(title, { skip: !built }, () => {
       });
     }
 
-    it('a second operation on the same hold waits for the first, and both complete', async () => {
+    // The runner's bound for a case that would otherwise hang; the product has none.
+    const bounded = { timeout: 10_000 };
+
+    it('a second operation on the same hold waits for the first, and both complete', bounded, async () => {
       const state = hold();
       const [first, second] = await Promise.all([
         work(state, 'overlap'),
@@ -223,7 +226,7 @@ describe(title, { skip: !built }, () => {
       assert.equal(second.sawWaiter, true, 'the second one waited');
     });
 
-    it('an operation whose Execute fails releases the hold: the next one proceeds', async () => {
+    it('an operation whose Execute fails releases the hold: the next one proceeds', bounded, async () => {
       const state = hold();
       await assert.rejects(work(state, 'throws'), {
         message: "the test worker's own failure",
@@ -339,7 +342,7 @@ describe(shippedTitle, { skip: !shippedBuilt }, () => {
     );
   });
 
-  it('overlapping calls on one client all answer, one after another', async () => {
+  it('overlapping calls on one client all answer, one after another', { timeout: 10_000 }, async () => {
     const lib: typeof import('../src/ts/index') = require(
       path.join(__dirname, '..', '..', 'lib', 'index.js'),
     );
