@@ -18,7 +18,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   given back in `OnOK` after the result has been read and the function handle destroyed
   (also when reading the result throws), and in `OnError`. The semantics are unchanged: one
   operation at a time per client, held from `Execute` until the result has been read.
-  The prebuilt bindings must be built again from these sources (`check:prebuilds`).
+- **A client is not collected while its operations run.** Every worker keeps a strong reference
+  to its client's JS object for its whole lifetime, including the hand-over from preparing a
+  call to invoking it. Before, a native client the caller had dropped could be collected
+  while a call was queued or waiting, and the worker then used freed memory.
+- **An exceptional completion answers and frees.** The release guard is installed before any
+  completion work, the `HandleScope` included. The RFC function handle has an owner, so
+  `RfcDestroyFunction` runs on every path; before, it leaked when setting a parameter failed. A
+  throw while a call is prepared or its result converted (a `bcd` transformer that throws, for
+  one) now rejects that call; before, it left the promise pending and surfaced as an
+  uncaught exception. A worker stays owned until `Queue()` has succeeded, so a `Queue()` that
+  throws leaks nothing.
+
+### Testing
+
+- `test/invocationHold.test.ts` covers these paths with the shipped `Client` over a fake
+  connection in the test addon (README, "Testing"), and runs again with
+  `UV_THREADPOOL_SIZE=1`. CI builds no C++ (no SDK there), so these cases skip in CI and
+  run only on a machine with the SDK.
+
+### Release note
+
+- The prebuilt bindings must be built again from these sources (`check:prebuilds`).
 
 ## [0.4.0] - 2026-11-11
 
